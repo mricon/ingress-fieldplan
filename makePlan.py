@@ -80,6 +80,9 @@ def main():
     parser.add_argument('-f','--output_file',default='plan.pkl',
                         help="Filename for pickle object. Default: "
                         "plan.pkl")
+    parser.add_argument('-p','--plots',action='store_true',
+                        default=False,
+                        help="Generate graphs and plots. Default: %default")
     args = vars(parser.parse_args())
 
     # Number of iterations to complete since last improvement
@@ -109,8 +112,8 @@ def main():
     EXTRA_SAMPLES = args["samples"]
     if EXTRA_SAMPLES < 0:
         sys.exit("Number of extra samples should be positive")
-    elif EXTRA_SAMPLES > 100:
-        sys.exit("Extra samples may not be more than 100")
+    elif EXTRA_SAMPLES > 10000:
+        sys.exit("Extra samples may not be more than 10000")
 
     input_file = args['input_file']
 
@@ -170,14 +173,7 @@ def main():
         # MK is the maximum number of missing keys for any single
         # portal
         bestgraph = None
-        bestlack = np.inf
-        bestTK = np.inf
-        bestMK = np.inf
-
-        allTK = []
-        allMK = []
-        allWeights = []
-
+        bestdist = np.inf
         sinceImprove = 0
 
         while sinceImprove<EXTRA_SAMPLES:
@@ -189,61 +185,42 @@ def main():
                 print 'Randomization failure\nThe program may work if you try again. It is more likely to work if you remove some portals.'
                 continue
 
-            TK = 0
-            MK = 0
-            for j in xrange(n):
-                keylack = max(b.in_degree(j)-b.node[j]['keys'],0)
-                TK += keylack
-                if keylack > MK:
-                    MK = keylack
-            
-            weightedlack = TK+2*MK
+            m = b.size()  # number of links
+            agentOrder.improveEdgeOrder(b)
+            orderedEdges = [None]*m
+            for e in b.edges_iter():
+                orderedEdges[b.edge[e[0]][e[1]]['order']] = e
 
-            allTK.append(TK)
-            allMK.append(MK)
-            allWeights.append(weightedlack)
+            movements = agentOrder.getAgentOrder(b,nagents,orderedEdges)
+            totaldist = 0
+            for i in xrange(nagents):
+                movie = movements[i]
+                # first portal in first link
+                curpos = b.node[orderedEdges[movie[0]][0]]['geo']
+                for e in movie[1:]:
+                    p,q = orderedEdges[e]
+                    newpos = b.node[p]['geo']
+                    dist = geometry.sphereDist(curpos,newpos)
+                    totaldist += int(dist[0])
+                    if totaldist > bestdist:
+                        # no need to continue
+                        break
+                    curpos = newpos
 
-            if weightedlack < bestlack:
+            if totaldist < bestdist:
                 sinceImprove = 0
-                print 'IMPROVEMENT:\n\ttotal: %s\n\tmax:   %s\n\tweighted: %s'%\
-                       (TK,MK,weightedlack)
                 bestgraph = b
-                bestlack  = weightedlack
-                bestTK  = TK
-                bestMK  = MK
-            else:
-                print 'this time:\n\ttotal: %s\n\tmax:   %s\n\tweighted: %s'%\
-                       (TK,MK,weightedlack)
+                bestdist  = totaldist
+                bestkm = bestdist/float(1000)
 
-            if weightedlack <= 0:
-                print 'KEY PERFECTION'
-                bestlack  = weightedlack
-                bestTK  = TK
-                bestMK  = MK
-                break
-            # if num agent keys is zero, this code isn't true...
-            # if all([ b.node[i]['keys'] <= b.out_degree(i) for i in xrange(n) ]):
-            #     print 'All keys used. Improvement impossible'
-            #     break
+            sys.stdout.write('\r(%0.2f km best): %s/%s      ' % (bestkm, sinceImprove, EXTRA_SAMPLES))
+            sys.stdout.flush()
 
-            print '%s tries since improvement'%sinceImprove
-
+        print
         if bestgraph == None:
             print 'EXITING RANDOMIZATION LOOP WITHOUT SOLUTION!'
             print ''
             exit()
-
-        print 'Choosing plan requiring %s additional keys, max of %s from single portal'%(bestTK,bestMK)
-
-        plt.clf()
-        plt.scatter(allTK,allMK,c=allWeights,marker='o')
-        plt.xlim(min(allTK)-1,max(allTK)+1)
-        plt.ylim(min(allMK)-1,max(allMK)+1)
-        plt.xlabel('Total keys required')
-        plt.ylabel('Max keys required for a single portal')
-        cbar = plt.colorbar()
-        cbar.set_label('Optimization Weighting (lower=better)')
-        plt.savefig(output_directory+'optimization.png')
 
         a = bestgraph
 
@@ -270,23 +247,25 @@ def main():
                                     api_key=api_key)
     PP.keyPrep()
     PP.agentKeys()
-    PP.planMap(useGoogle=useGoogle)
     PP.agentLinks()
+    PP.makeODS()
 
     # These make step-by-step instructional images
-    PP.animate(useGoogle=useGoogle)
-    PP.split3instruct(useGoogle=useGoogle)
+    if args['plots']:
+        PP.planMap(useGoogle=useGoogle)
+        #PP.animate(useGoogle=useGoogle)
+        #PP.split3instruct(useGoogle=useGoogle)
 
-    print "Number of portals: {0}".format(PP.num_portals)
-    print "Number of links: {0}".format(PP.num_links)
-    print "Number of fields: {0}".format(PP.num_fields)
-    portal_ap = (125*8 + 500 + 250)*PP.num_portals
-    link_ap = 313 * PP.num_links
-    field_ap = 1250 * PP.num_fields
-    print "AP from portals capture: {0}".format(portal_ap)
-    print "AP from link creation: {0}".format(link_ap)
-    print "AP from field creation: {0}".format(field_ap)
-    print "Total AP: {0}".format(portal_ap+link_ap+field_ap)
+    #print "Number of portals: {0}".format(PP.num_portals)
+    #print "Number of links: {0}".format(PP.num_links)
+    #print "Number of fields: {0}".format(PP.num_fields)
+    #portal_ap = (125*8 + 500 + 250)*PP.num_portals
+    #link_ap = 313 * PP.num_links
+    #field_ap = 1250 * PP.num_fields
+    ##print "AP from portals capture: {0}".format(portal_ap)
+    #print "AP from link creation: {0}".format(link_ap)
+    #print "AP from field creation: {0}".format(field_ap)
+    #print "Total AP: {0}".format(portal_ap+link_ap+field_ap)
 
 if __name__ == "__main__":
     main()

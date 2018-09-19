@@ -155,6 +155,75 @@ class PlanPrinter:
             except urllib2.URLError as err:
                 print("Could not connect to google maps server!")
 
+    def makeODS(self):
+        from pyexcel_ods import save_data
+        from collections import OrderedDict
+        # Start with two sheets: one for keys, one for links
+        ods_data = OrderedDict()
+        keyrows = []
+        for i in self.nameOrder:
+            #keylack = max(self.a.in_degree(i)-self.a.node[i]['keys'],0)
+            #keyrows.append([self.a.in_degree(i), keylack, self.names[i]])
+            keyrows.append([self.names[i], self.a.in_degree(i)])
+        ods_data.update({'All Keys': keyrows})
+
+        for agent in range(self.nagents):
+            sheetname = 'Links_%s' % agent
+            linkrows = []
+            prev_origin_name = None
+            agentnodes = []
+            for i in xrange(self.m):
+                p,q = self.orderedEdges[i]
+                if p not in agentnodes:
+                    agentnodes.append(p)
+                if q not in agentnodes:
+                    agentnodes.append(q)
+                
+                if self.names[p] == prev_origin_name:
+                    origin_name = ''
+                else:
+                    origin_name = self.names[p]
+                    prev_origin_name = origin_name
+
+                dest_name = self.names[q]
+
+                # Put a star by links that can be completed early since they complete no fields
+                numfields = len(self.a.edge[p][q]['fields'])
+                if numfields == 0:
+                    dest_name = '*' + dest_name
+                linkrows.append([origin_name, dest_name])
+            ods_data.update({sheetname: linkrows})
+            # order agent nodes by distance from first one
+            dist_ordered = [agentnodes.pop(0)]
+            curpos = self.a.node[dist_ordered[0]]['geo']
+            while True:
+                if not len(agentnodes):
+                    break
+                shortest_hop = np.inf
+                next_node = None
+                for x in agentnodes:
+                    # calculate distance to curpos
+                    nodepos = self.a.node[x]['geo']
+                    dist = geometry.sphereDist(curpos, self.a.node[x]['geo'])[0]
+                    if dist < shortest_hop:
+                        shortest_hop = dist
+                        next_node = x
+
+                curpos = self.a.node[next_node]['geo']
+                dist_ordered.append(next_node)
+                agentnodes.remove(next_node)
+
+            dist_ordered.reverse()
+            sheetname = 'Keys_%s' % agent
+            akeyrows = []
+            for i in dist_ordered:
+                akeyrows.append([self.names[i], self.a.in_degree(i)])
+
+            ods_data.update({sheetname: akeyrows})
+
+        save_data(self.outputDir+'agent_plan.ods', ods_data)
+
+
     def keyPrep(self):
         rowFormat = '{0:11d} | {1:6d} | {2}\n'
         with open(self.outputDir+'keyPrep.txt','w') as fout:
