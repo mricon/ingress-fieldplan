@@ -253,19 +253,19 @@ def main():
     # These make step-by-step instructional images
     if args['plots']:
         PP.planMap(useGoogle=useGoogle)
-        #PP.animate(useGoogle=useGoogle)
-        #PP.split3instruct(useGoogle=useGoogle)
+        PP.animate(useGoogle=useGoogle)
+        PP.split3instruct(useGoogle=useGoogle)
 
-    #print "Number of portals: {0}".format(PP.num_portals)
-    #print "Number of links: {0}".format(PP.num_links)
-    #print "Number of fields: {0}".format(PP.num_fields)
-    #portal_ap = (125*8 + 500 + 250)*PP.num_portals
-    #link_ap = 313 * PP.num_links
-    #field_ap = 1250 * PP.num_fields
-    ##print "AP from portals capture: {0}".format(portal_ap)
-    #print "AP from link creation: {0}".format(link_ap)
-    #print "AP from field creation: {0}".format(field_ap)
-    #print "Total AP: {0}".format(portal_ap+link_ap+field_ap)
+    print "Number of portals: {0}".format(PP.num_portals)
+    print "Number of links: {0}".format(PP.num_links)
+    print "Number of fields: {0}".format(PP.num_fields)
+    portal_ap = (125*8 + 500 + 250)*PP.num_portals
+    link_ap = 313 * PP.num_links
+    field_ap = 1250 * PP.num_fields
+    #print "AP from portals capture: {0}".format(portal_ap)
+    print "AP from link creation: {0}".format(link_ap)
+    print "AP from field creation: {0}".format(field_ap)
+    print "Total AP: {0}".format(portal_ap+link_ap+field_ap)
 
 if __name__ == "__main__":
     main()
