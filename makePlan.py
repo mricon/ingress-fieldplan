@@ -67,11 +67,13 @@ def main():
                         help='Google API key for Google maps. Default: None')
     parser.add_argument('-n','--num_agents',type=int,default='1',
                         help='Number of agents. Default: 1')
-    parser.add_argument('-s','--samples',type=int,default=50,
+    parser.add_argument('-s','--samples',type=int,default=5000,
                         help="Number of iterations to "
                         "perform. More iterations may improve "
                         "results, but will take longer to process. "
-                        "Default: 50")
+                        "Default: 5000")
+    parser.add_argument('-k','--maxkeys',type=int, default='3',
+                        help='Maximum lacking keys per portal. Default: 3')
     parser.add_argument('input_file',
                         help="Input semi-colon delimited portal file")
     parser.add_argument('-d','--output_dir',default='',
@@ -167,27 +169,50 @@ def main():
             a.node[i]['xyz'] = xyz[i]
             a.node[i]['xy' ] = xy[i]
 
-        # EXTRA_SAMPLES attempts to get graph with few missing keys
-        # Try to minimuze TK + 2*MK where
-        # TK is the total number of missing keys
-        # MK is the maximum number of missing keys for any single
-        # portal
         bestgraph = None
         bestdist = np.inf
+        bestkm = None
         sinceImprove = 0
+        maxKeys = args['maxkeys']
+        print('Finding the shortest plan with max %s lacking keys' % maxKeys)
 
         while sinceImprove<EXTRA_SAMPLES:
             b = a.copy()
 
             sinceImprove += 1
 
+            if bestkm is not None:
+                sys.stdout.write('\r(%0.2f km best): %s/%s      ' % (bestkm, sinceImprove, EXTRA_SAMPLES))
+                sys.stdout.flush()
+
             if not maxfield.maxFields(b):
                 print 'Randomization failure\nThe program may work if you try again. It is more likely to work if you remove some portals.'
                 continue
 
-            m = b.size()  # number of links
+            # do any of the portals require more than maxkeys
+            sane_key_reqs = True
+            for i in range(len(b.node)):
+                keylack = max(b.in_degree(i)-b.node[i]['keys'],0)
+                if keylack > maxKeys:
+                    # Ignoring this plan
+                    sane_key_reqs = False
+                    break
+
+            if not sane_key_reqs:
+                continue
+
+            # Attach to each edge a list of fields that it completes
+            # catch no triangulation (bad portal file?)
+            try:
+                for t in b.triangulation:
+                    t.markEdgesWithFields()
+            except AttributeError:
+                # ignore this attempt
+                continue
+
             agentOrder.improveEdgeOrder(b)
-            orderedEdges = [None]*m
+
+            orderedEdges = [None]*b.size()
             for e in b.edges_iter():
                 orderedEdges[b.edge[e[0]][e[1]]['order']] = e
 
@@ -213,9 +238,6 @@ def main():
                 bestdist  = totaldist
                 bestkm = bestdist/float(1000)
 
-            sys.stdout.write('\r(%0.2f km best): %s/%s      ' % (bestkm, sinceImprove, EXTRA_SAMPLES))
-            sys.stdout.flush()
-
         print
         if bestgraph == None:
             print 'EXITING RANDOMIZATION LOOP WITHOUT SOLUTION!'
@@ -224,24 +246,11 @@ def main():
 
         a = bestgraph
 
-        # Attach to each edge a list of fields that it completes
-        # catch no triangulation (bad portal file?)
-        try:
-            for t in a.triangulation:
-                t.markEdgesWithFields()
-        except AttributeError:
-            print "Error: problem with bestgraph... no triangulation...?"
-
-        agentOrder.improveEdgeOrder(a)
-
         with open(output_directory+output_file,'w') as fout:
             pickle.dump(a,fout)
     else:
         with open(input_file,'r') as fin:
             a = pickle.load(fin)
-    #    agentOrder.improveEdgeOrder(a)
-    #    with open(output_directory+output_file,'w') as fout:
-    #        pickle.dump(a,fout)
 
     PP = PlanPrinterMap.PlanPrinter(a,output_directory,nagents,useGoogle=useGoogle,
                                     api_key=api_key)

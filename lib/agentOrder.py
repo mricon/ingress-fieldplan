@@ -274,6 +274,55 @@ def improveEdgeOrder(a):
                             orderedEdges[j+1: ]
         #TODO else: choose the closest earlier portal
     
+    prev_origin = None
+    prev_origin_created_fields = False
+    o_starts = []
+    z = None
+    for i in xrange(m):
+        p,q = orderedEdges[i]
+        if prev_origin != p:
+            # we moved to a new origin
+            if z and not prev_origin_created_fields:
+                #print(orderedEdges)
+                #print('p=%s' % p)
+                #print('z=%s' % z)
+                #print('i=%s' % i)
+                #print('prev_origin=%s' % prev_origin)
+                # previous origin didn't create any fields, so move it
+                # to happen right before the closest located portal
+                # that we've already been to before
+                closest_node_pos = 0
+                if len(o_starts) > 2:
+                    shortest_hop = None
+                    curpos = a.node[prev_origin]['geo']
+                    for o_seen, o_pos in o_starts[:-1]:
+                        #print('o_seen=%s' % o_seen)
+                        #print('o_pos=%s' % o_pos)
+                        # calculate distance to this portal
+                        nodepos = a.node[o_seen]['geo']
+                        dist = geometry.sphereDist(curpos, nodepos)[0]
+                        #print('distance to %s: %s' % (o_seen, dist))
+                        if shortest_hop is None or dist < shortest_hop:
+                            shortest_hop = dist
+                            closest_node_pos = o_pos
+
+                #print('closest_node_pos=%s' % closest_node_pos)
+                orderedEdges =  orderedEdges[:closest_node_pos]+\
+                                orderedEdges[z:i]+\
+                                orderedEdges[closest_node_pos:z]+\
+                                orderedEdges[i:]
+
+                #print(orderedEdges)
+
+            prev_origin = p
+            o_starts.append((p,i))
+            prev_origin_created_fields = False
+            z = i
+
+        # Only move those that don't complete fields
+        if len(a.edge[p][q]['fields']) > 0:
+            prev_origin_created_fields = True
+
 #    print 
     for i in xrange(m):
         p,q = orderedEdges[i]

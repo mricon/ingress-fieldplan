@@ -182,6 +182,9 @@ class PlanPrinter:
                 if self.names[p] == prev_origin_name:
                     origin_name = ''
                 else:
+                    # Add a blank row to separate portals
+                    if prev_origin_name is not None:
+                        linkrows.append(['', ''])
                     origin_name = self.names[p]
                     prev_origin_name = origin_name
 
@@ -204,7 +207,7 @@ class PlanPrinter:
                 for x in agentnodes:
                     # calculate distance to curpos
                     nodepos = self.a.node[x]['geo']
-                    dist = geometry.sphereDist(curpos, self.a.node[x]['geo'])[0]
+                    dist = geometry.sphereDist(curpos, nodepos)[0]
                     if dist < shortest_hop:
                         shortest_hop = dist
                         next_node = x
