@@ -256,15 +256,15 @@ class PlanPrinter:
 
                 dist = 0
                 if prev_p is not None:
-                    planrows.append(('', ''))
+                    planrows.append((u'▼', ''))
 
                     prevpos = self.a.node[prev_p]['geo']
                     curpos = self.a.node[p]['geo']
                     dist = geometry.sphereDist(prevpos, curpos)[0]
-                    if dist > 40:
+                    if dist > 80:
                         totaldist += dist
 
-                if dist > 40:
+                if dist > 80:
                     planrows.append(('P', '%s (%d m)' % (self.names[p], dist)))
                 else:
                     planrows.append(('P', self.names[p]))
@@ -284,7 +284,7 @@ class PlanPrinter:
                 if f:
                     action = 'F'
 
-                planrows.append((action, '->%s' % self.names[q]))
+                planrows.append((action, u'▶%s' % self.names[q]))
                     
         #import pprint
         #pprint.pprint(planrows)
