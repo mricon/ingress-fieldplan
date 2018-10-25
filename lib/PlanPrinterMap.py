@@ -278,7 +278,7 @@ class PlanPrinter:
 
                 prev_p = p
 
-            if q:
+            if q is not False:
                 # Add links/fields
                 action = 'L'
                 if f:
