@@ -45,6 +45,7 @@ def flip(a,p,q,degrees=None,keylacks=None):
         keylacks[p] += 1
         keylacks[q] -= 1
 
+
 def flipSome(a):
     '''
     Tries to make each in and out degree of a <=8 by reversing edges
@@ -172,7 +173,7 @@ def maxFields(a):
     perim = np.array(geometry.getPerim(pts))
     if not triangulate(a,perim):
         return False
-    flipSome(a)
+    #flipSome(a)
 
     return True
 

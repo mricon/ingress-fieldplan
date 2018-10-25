@@ -6,3 +6,5 @@ docopt>=0.6.1
 pandas>=0.14.1
 pillow
 pyexcel-ods
+google-api-python-client
+oauth2client

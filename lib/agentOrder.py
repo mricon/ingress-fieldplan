@@ -10,6 +10,7 @@ Original by jpeterbacker
 """
 import geometry
 import numpy as np
+import sys
 
 import orderedTSP
 
@@ -236,7 +237,7 @@ def getAgentOrder(a,nagents,orderedEdges):
 #    return movements
 #
 #
-def improveEdgeOrder(a):
+def improveEdgeOrder(a, bestdist):
     '''
     Edges that do not complete any fields can be made earlier
     This method alters the graph a such that
@@ -273,7 +274,7 @@ def improveEdgeOrder(a):
                             orderedEdges[i  :j] +\
                             orderedEdges[j+1: ]
         #TODO else: choose the closest earlier portal
-    
+
     prev_origin = None
     prev_origin_created_fields = False
     o_starts = []
@@ -323,11 +324,46 @@ def improveEdgeOrder(a):
         if len(a.edge[p][q]['fields']) > 0:
             prev_origin_created_fields = True
 
+    # avoid this stupid single-portal pingpong:
+    #   portal_a -> foo
+    #   portal_b -> portal_a
+    #   portal_a -> bar
+    # This should be optimized into:
+    #   portal_a -> foo
+    #   portal_a -> portal_b
+    #   portal_a -> bar
+    for i in xrange(1,m-1):
+        p,q = orderedEdges[i]
+        prev_origin = orderedEdges[i-1][0]
+        if prev_origin != p:
+            # we moved to a new origin
+            next_origin = orderedEdges[i+1][0]
+            if prev_origin == q and next_origin == prev_origin:
+                #sys.stdout.write('fixed %s->%s->%s\n' % (prev_origin, p, next_origin))
+                # reverse this link
+                a.add_edge(q,p,a.edge[p][q])
+                a.remove_edge(p,q)
+                orderedEdges[i] = (q,p)
+    
 #    print 
+    totaldist = 0
+    curpos = None
+    curp = None
     for i in xrange(m):
         p,q = orderedEdges[i]
 #        print p,q,a.edge[p][q]['fields']
         a.edge[p][q]['order'] = i
+        newpos = a.node[p]['geo']
+        if curp is not None and curp != p:
+            dist = geometry.sphereDist(curpos,newpos)
+            totaldist += int(dist[0])
+        if totaldist >= bestdist:
+            # quit early
+            return np.inf
+        curpos = newpos
+        curp = p
+
+    return totaldist
 #    print
 
 if __name__=='__main__':

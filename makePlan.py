@@ -45,6 +45,7 @@ import numpy as np
 import pandas as pd
 from lib import maxfield,PlanPrinterMap,geometry,agentOrder
 import pickle
+import signal
 
 import matplotlib.pyplot as plt
 
@@ -65,13 +66,13 @@ def main():
                         help='Make maps with google maps API. Default: False')
     parser.add_argument('-a','--api_key',default=None,
                         help='Google API key for Google maps. Default: None')
-    parser.add_argument('-n','--num_agents',type=int,default='1',
-                        help='Number of agents. Default: 1')
-    parser.add_argument('-s','--samples',type=int,default=5000,
+    parser.add_argument('-t', '--google_token',default=None,
+                        help='Path to the google token for writing to Google Spreadsheets')
+    parser.add_argument('-i','--iterations',type=int,default=10000,
                         help="Number of iterations to "
                         "perform. More iterations may improve "
                         "results, but will take longer to process. "
-                        "Default: 5000")
+                        "Default: 10000")
     parser.add_argument('-k','--maxkeys',type=int, default='3',
                         help='Maximum lacking keys per portal. Default: 3')
     parser.add_argument('input_file',
@@ -84,11 +85,8 @@ def main():
                         "plan.pkl")
     parser.add_argument('-p','--plots',action='store_true',
                         default=False,
-                        help="Generate graphs and plots. Default: %default")
+                        help="Generate graphs and plots. Default: False")
     args = vars(parser.parse_args())
-
-    # Number of iterations to complete since last improvement
-    EXTRA_SAMPLES = args["samples"]
 
     GREEN = '#3BF256' # Actual faction text colors in the app
     BLUE  = '#2ABBFF'
@@ -107,15 +105,14 @@ def main():
     if output_file[-4:] != '.pkl':
         output_file += ".pkl"
 
-    nagents = args["num_agents"]
+    # I broke multi-agent stuff, and I don't care
+    nagents = 1
     if nagents < 0:
         sys.exit("Number of agents should be positive")
 
-    EXTRA_SAMPLES = args["samples"]
+    EXTRA_SAMPLES = args["iterations"]
     if EXTRA_SAMPLES < 0:
         sys.exit("Number of extra samples should be positive")
-    elif EXTRA_SAMPLES > 10000:
-        sys.exit("Extra samples may not be more than 10000")
 
     input_file = args['input_file']
 
@@ -175,68 +172,60 @@ def main():
         sinceImprove = 0
         maxKeys = args['maxkeys']
         print('Finding the shortest plan with max %s lacking keys' % maxKeys)
+        print('Ctrl-C to exit early')
 
-        while sinceImprove<EXTRA_SAMPLES:
-            b = a.copy()
+        try:
+            while sinceImprove<EXTRA_SAMPLES:
+                b = a.copy()
 
-            sinceImprove += 1
+                sinceImprove += 1
 
-            if bestkm is not None:
-                sys.stdout.write('\r(%0.2f km best): %s/%s      ' % (bestkm, sinceImprove, EXTRA_SAMPLES))
-                sys.stdout.flush()
+                if bestkm is not None:
+                    sys.stdout.write('\r(%0.2f km best): %s/%s      ' % (bestkm, sinceImprove, EXTRA_SAMPLES))
+                    sys.stdout.flush()
 
-            if not maxfield.maxFields(b):
-                print 'Randomization failure\nThe program may work if you try again. It is more likely to work if you remove some portals.'
-                continue
+                if not maxfield.maxFields(b):
+                    print 'Randomization failure\nThe program may work if you try again. It is more likely to work if you remove some portals.'
+                    continue
 
-            # do any of the portals require more than maxkeys
-            sane_key_reqs = True
-            for i in range(len(b.node)):
-                keylack = max(b.in_degree(i)-b.node[i]['keys'],0)
-                if keylack > maxKeys:
-                    # Ignoring this plan
-                    sane_key_reqs = False
-                    break
-
-            if not sane_key_reqs:
-                continue
-
-            # Attach to each edge a list of fields that it completes
-            # catch no triangulation (bad portal file?)
-            try:
-                for t in b.triangulation:
-                    t.markEdgesWithFields()
-            except AttributeError:
-                # ignore this attempt
-                continue
-
-            agentOrder.improveEdgeOrder(b)
-
-            orderedEdges = [None]*b.size()
-            for e in b.edges_iter():
-                orderedEdges[b.edge[e[0]][e[1]]['order']] = e
-
-            movements = agentOrder.getAgentOrder(b,nagents,orderedEdges)
-            totaldist = 0
-            for i in xrange(nagents):
-                movie = movements[i]
-                # first portal in first link
-                curpos = b.node[orderedEdges[movie[0]][0]]['geo']
-                for e in movie[1:]:
-                    p,q = orderedEdges[e]
-                    newpos = b.node[p]['geo']
-                    dist = geometry.sphereDist(curpos,newpos)
-                    totaldist += int(dist[0])
-                    if totaldist > bestdist:
-                        # no need to continue
+                # do any of the portals require more than maxkeys
+                sane_key_reqs = True
+                sane_out_links = True
+                for i in range(len(b.node)):
+                    if b.out_degree(i) > 8:
+                        sane_out_links = False
                         break
-                    curpos = newpos
+                    keylack = max(b.in_degree(i)-b.node[i]['keys'],0)
+                    if keylack > maxKeys:
+                        # Ignoring this plan
+                        sane_key_reqs = False
+                        break
 
-            if totaldist < bestdist:
-                sinceImprove = 0
-                bestgraph = b
-                bestdist  = totaldist
-                bestkm = bestdist/float(1000)
+                if not sane_key_reqs or not sane_out_links:
+                    continue
+
+                # Attach to each edge a list of fields that it completes
+                # catch no triangulation (bad portal file?)
+                try:
+                    for t in b.triangulation:
+                        t.markEdgesWithFields()
+                except AttributeError:
+                    # ignore this attempt
+                    continue
+
+                totaldist = agentOrder.improveEdgeOrder(b, bestdist)
+
+                if totaldist < bestdist:
+                    print
+                    sinceImprove = 0
+                    bestgraph = b
+                    bestdist  = totaldist
+                    bestkm = bestdist/float(1000)
+
+        except KeyboardInterrupt:
+            print()
+            print('Exiting loop')
+            pass
 
         print
         if bestgraph == None:
@@ -258,8 +247,13 @@ def main():
     PP.agentKeys()
     PP.agentLinks()
     PP.makeODS()
+    if args['google_token']:
+        gstitle = 'Ingress: %s' % os.path.basename(input_file)
+        PP.makeGoogleSheet(title=gstitle, tokenfile=args['google_token'])
 
     # These make step-by-step instructional images
+    # Note, that these don't necessarily reflect the order
+    # in the google spreadsheet
     if args['plots']:
         PP.planMap(useGoogle=useGoogle)
         PP.animate(useGoogle=useGoogle)

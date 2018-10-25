@@ -155,6 +155,278 @@ class PlanPrinter:
             except urllib2.URLError as err:
                 print("Could not connect to google maps server!")
 
+    def makeGoogleSheet(self, title='Maxfield plan', tokenfile='token.json'):
+        # We do this pretending there is only one agent
+        from googleapiclient.discovery import build
+        from httplib2 import Http
+        from oauth2client import file, client, tools
+
+        linkplan = []
+
+        # order agent portals by distance from first one
+        # Which portals are we going to visit?
+        all_p = []
+        for i in range(self.m):
+            p,q = self.orderedEdges[i]
+            # is this link completing a field?
+            f = False
+            if len(self.a.edge[p][q]['fields']):
+                f = True
+            linkplan.append((p, q, f))
+            if p not in all_p:
+                all_p.append(p)
+            if q not in all_p:
+                all_p.append(q)
+
+        dist_ordered = [all_p.pop(0)]
+        curpos = self.a.node[dist_ordered[0]]['geo']
+        while True:
+            if not len(all_p):
+                break
+            shortest_hop = np.inf
+            next_node = None
+            for x in all_p:
+                # calculate distance to curpos
+                nodepos = self.a.node[x]['geo']
+                dist = geometry.sphereDist(curpos, nodepos)[0]
+                if dist < shortest_hop:
+                    shortest_hop = dist
+                    next_node = x
+
+            curpos = self.a.node[next_node]['geo']
+            dist_ordered.append(next_node)
+            all_p.remove(next_node)
+
+        # Make a unified workplan
+        workplan = []
+        dist_ordered.pop(0)
+        dist_ordered.reverse()
+        p_captured = []
+        for p in dist_ordered:
+            # Go through those already captured and
+            # see if we can move any non-field-making
+            # links in the linkplan to this position
+            links_moved = False
+            for cp in p_captured:
+                if (p, cp, False) in linkplan:
+                    # Yes, found a link we can make early
+                    workplan.append((p, cp, False))
+                    linkplan.remove((p, cp, False))
+                    links_moved = True
+            if not links_moved:
+                # Just capturing, then
+                workplan.append((p, False, False))
+
+            p_captured.append(p)
+
+        workplan.extend(linkplan)
+
+        # Use for spreadsheet rows
+        planrows = []
+
+        # Track which portals we've already captured
+        # (easier than going through the list backwards)
+        prev_p = None
+        plan_at = 0
+        prevpos = None
+        totaldist = 0
+        for p,q,f in workplan:
+            plan_at += 1
+            
+            # Are we at a different location than the previous portal?
+            if p != prev_p:
+                # How many keys do we need if/until we come back?
+                needkeys = 0
+                # Track when we leave this portal
+                lastvisit = True
+                left_p = False
+                for fp,fq,ff in workplan[plan_at:]:
+                    if fp == p:
+                        # Are we still at the same portal?
+                        if not left_p:
+                            continue
+                        lastvisit = False
+                        break
+                    else:
+                        # we're at a different portal
+                        left_p = True
+                    if fq and fq == p:
+                        # Future link to this portal
+                        needkeys += 1
+
+                dist = 0
+                if prev_p is not None:
+                    planrows.append(('', ''))
+
+                    prevpos = self.a.node[prev_p]['geo']
+                    curpos = self.a.node[p]['geo']
+                    dist = geometry.sphereDist(prevpos, curpos)[0]
+                    if dist > 40:
+                        totaldist += dist
+
+                if dist > 40:
+                    planrows.append(('P', '%s (%d m)' % (self.names[p], dist)))
+                else:
+                    planrows.append(('P', self.names[p]))
+
+                if needkeys:
+                    planrows.append(('H', '%d total keys' % needkeys))
+
+                if lastvisit:
+                    # How many total links to and from this portal?
+                    planrows.append(('S', '%d out, %d in' % (self.a.out_degree(p), self.a.in_degree(p))))
+
+                prev_p = p
+
+            if q:
+                # Add links/fields
+                action = 'L'
+                if f:
+                    action = 'F'
+
+                planrows.append((action, '->%s' % self.names[q]))
+                    
+        #import pprint
+        #pprint.pprint(planrows)
+        #import sys
+        #sys.exit(0)
+        #return
+
+        store = file.Storage(tokenfile)
+        creds = store.get()
+        # TODO: Move elsewhere
+        if not creds or creds.invalid:
+            flow = client.flow_from_clientsecrets('credentials.json',
+                    'https://www.googleapis.com/auth/spreadsheets')
+            creds = tools.run_flow(flow, store)
+
+        service = build('sheets', 'v4', http=creds.authorize(Http()))
+        totalkm = totaldist/float(1000)
+        spreadsheet = {
+            'properties': {
+                'title': '%s (%0.2f km)' % (title, totalkm),
+            }
+        }
+        
+        sp = service.spreadsheets().create(body=spreadsheet, fields='spreadsheetId').execute()                                       
+        spid = sp['spreadsheetId']
+
+        requests = []
+        requests.append({
+            'updateSheetProperties': {
+                'properties': {
+                    'title': 'Portals',
+                    'sheetId': 0,
+                },
+                'fields': 'title',
+            }
+        })
+        requests.append({
+            'addSheet': {
+                'properties': {
+                    'title': 'Workplan',
+                }
+            }
+        })
+
+        body = {
+            'requests': requests,
+        }
+        res = service.spreadsheets().batchUpdate(spreadsheetId=spid, body=body).execute()
+        sheet_ids = [0]
+        for blurb in res['replies']:
+            if 'addSheet' in blurb:
+                sheet_ids.append(blurb['addSheet']['properties']['sheetId'])
+
+        # Now we generate a values update request
+        updates = []
+
+        keyrows = []
+        for i in self.nameOrder:
+            #keylack = max(self.a.in_degree(i)-self.a.node[i]['keys'],0)
+            #keyrows.append([self.a.in_degree(i), keylack, self.names[i]])
+            keyrows.append([self.names[i], self.a.in_degree(i)])
+
+        updates.append({
+            'range': 'Portals!A1:B%d' % len(keyrows),
+            'majorDimension': 'ROWS',
+            'values': keyrows,
+        })
+
+        # TODO: Add useful info like:
+        # - link to the intel map
+        # - Links, Fields
+
+        updates.append({
+            'range': 'Workplan!A1:B%d' % len(planrows),
+            'majorDimension': 'ROWS',
+            'values': planrows,
+        })
+
+        body = {
+            'valueInputOption': 'RAW',
+            'data': updates,
+        }
+
+        res = service.spreadsheets().values().batchUpdate(spreadsheetId=spid, body=body).execute()
+
+        # now auto-resize all columns
+        requests = []
+        colors = (
+            ('H', 1.0, 0.6, 0.4), # Hack
+            ('S', 0.6, 0.8, 1.0), # Shield
+            ('L', 0.8, 1.0, 0.8), # Link
+            ('F', 0.5, 1.0, 0.5), # Field
+            ('T', 0.9, 0.9, 0.9), # Travel
+            ('P', 0.6, 0.6, 0.6), # Portal
+        )
+        for sid in sheet_ids:
+            requests.append({
+                'autoResizeDimensions': {
+                    'dimensions': {
+                        'sheetId': sid,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 0,
+                        'endIndex': 3,
+                    }
+                }
+            })
+            if sid == 0:
+                continue
+
+            # set conditional formatting on the Workplan sheet
+            my_range = {
+                'sheetId': sid,
+                'startRowIndex': 0,
+                'endRowIndex': len(planrows),
+                'startColumnIndex': 0,
+                'endColumnIndex': 1,
+            }
+            for text, red, green, blue in colors:
+                requests.append({
+                    'addConditionalFormatRule': {
+                        'rule': {
+                            'ranges': [ my_range ],
+                            'booleanRule': {
+                                'condition': {
+                                    'type': 'TEXT_EQ',
+                                    'values': [ { 'userEnteredValue': text } ]
+                                },
+                                'format': {
+                                    'backgroundColor': { 'red': red, 'green': green, 'blue': blue }
+                                }
+                            }
+                        },
+                        'index': 0
+                    }
+                })
+        
+        body = {
+            'requests': requests,
+        }
+        res = service.spreadsheets().batchUpdate(spreadsheetId=spid, body=body).execute()
+
+
     def makeODS(self):
         from pyexcel_ods import save_data
         from collections import OrderedDict
