@@ -265,7 +265,10 @@ class PlanPrinter:
                         totaldist += dist
 
                 if dist > 80:
-                    planrows.append(('P', '%s (%d m)' % (self.names[p], dist)))
+                    if dist >= 500:
+                        planrows.append(('P', '%s (%0.1f km)' % (self.names[p], dist/float(1000))))
+                    else:
+                        planrows.append(('P', '%s (%d m)' % (self.names[p], dist)))
                 else:
                     planrows.append(('P', self.names[p]))
 
