@@ -103,6 +103,7 @@ def main():
     a = maxfield.populateGraph(portals)
 
     bestplan = None
+    bestgraph = None
     bestdist = np.inf
     bestkm = None
     counter = 0
@@ -161,6 +162,7 @@ def main():
             if totaldist < bestdist:
                 counter = 0
                 bestplan = workplan
+                bestgraph = b
                 bestdist = totaldist
                 bestkm = bestdist/float(1000)
 
@@ -176,7 +178,7 @@ def main():
         logger.critical('Could not find a solution for this list of portals.')
         sys.exit(1)
 
-    gsheets.write_workplan(gs, args.sheetid, a, bestplan, args.travelmode)
+    gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.travelmode)
 
 if __name__ == "__main__":
     main()

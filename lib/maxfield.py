@@ -67,6 +67,8 @@ def populateGraph(portals):
 
 
 def makeWorkPlan(a, ab=None):
+    global _capture_cache
+
     # make a linkplan first
     linkplan = [None] * a.size()
 
