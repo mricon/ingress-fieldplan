@@ -1,46 +1,51 @@
-#!/usr/env python
+#!/usr/env python3
 # -*- coding: utf-8 -*-
-import geometry
-np = geometry.np
+
+from lib import geometry
+
+import numpy as np
+np.seterr(divide='ignore', invalid='ignore')
+
+import logging
+logger = logging.getLogger('maxfield3')
 
 class Deadend(Exception):
-    def __init__(self,s):
+    def __init__(self, s):
+        logger.debug('Hit a deadend: %s', s)
         self.explain = s
+
 
 def try_ordered_edge(a,p,q,reversible):
     if a.has_edge(p,q) or a.has_edge(q,p):
         return
 
-#    if reversible and a.out_degree(p) > a.out_degree(q):
-#        p,q = q,p
-
     if a.out_degree(p) >= 8:
         if not reversible:
-#            print '%s already has 8 outgoing'%p
-            raise(Deadend('%s already has 8 outgoing'%p))
+            raise(Deadend('%s already has 8 outgoing' % p))
         if a.out_degree(q) >= 8:
-#            print '%s and %s already have 8 outgoing'%(p,q)
             raise(Deadend('%s and %s already have 8 outgoing'%(p,q)))
-        p,q = q,p
+        p, q = q, p
     
     m = a.size()
-    a.add_edge(p,q,{'order':m,'reversible':reversible,'fields':[]})
+    a.add_edge(p, q, order=m, reversible=reversible, fields=[])
 
     try:
-        a.edgeStack.append( (p,q) )
+        a.edgeStack.append((p, q))
     except AttributeError:
         a.edgeStack = [ (p,q) ]
-#    print 'adding',p,q
-#    print a.edgeStack
+    logger.debug('adding p=%s, q=%s', p, q)
+    logger.debug('edgeStack follows')
+    logger.debug(a.edgeStack)
+
 
 class Triangle:
-    def __init__(self,verts,a,exterior=False):
-        '''
+    def __init__(self, verts, a, exterior=False):
+        """
         verts should be a 3-list of Portals
         verts[0] should be the final one used in linking
         exterior should be set to true if this triangle has no triangle parent
             the orientation of the outer edges of exterior Triangles do not matter
-        '''
+        """
         # If this portal is exterior, the final vertex doesn't matter
         self.verts = list(verts)
         self.a = a
@@ -58,17 +63,20 @@ class Triangle:
         self.contents = []
         self.center = None
 
-    def findContents(self,candidates=None):
-        if candidates == None:
-            candidates = xrange(self.a.order())
+
+    def findContents(self, candidates=None):
+        if candidates is None:
+            candidates = range(self.a.order())
+
         for p in candidates:
             if p in self.verts:
                 continue
-            if geometry.sphereTriContains(self.pts,self.a.node[p]['xyz']):
+            if geometry.sphereTriContains(self.pts, self.a.node[p]['xyz']):
                 self.contents.append(p)
 
+
     def randSplit(self):
-        if len(self.contents) == 0:
+        if not len(self.contents):
             return
         
         p = self.contents[np.random.randint(len(self.contents))]
@@ -78,10 +86,12 @@ class Triangle:
         for child in self.children:
             child.randSplit()
 
+
     def nearSplit(self):
         # Split on the node closest to final
         if len(self.contents) == 0:
             return
+
         contentPts = np.array([self.a.node[p]['pos'] for p in self.contents])
         displaces = contentPts - self.a.node[self.verts[0]]['pos']
         dists = np.sum(displaces**2,1)
@@ -92,17 +102,18 @@ class Triangle:
         for child in self.children:
             child.nearSplit()
 
+
     def splitOn(self,p):
         # 'opposite' is the child that does not share the final vertex
         # Because of the build order, it's safe for this triangle to believe it is exterior
-        opposite  =  Triangle([self.verts[1],p,\
-                               self.verts[2]],self.a,True)
+        opposite  =  Triangle([self.verts[1], p,
+                               self.verts[2]], self.a, True)
         # The other two children must also use my final as their final
-        adjacents = [\
-                     Triangle([self.verts[0],\
-                               self.verts[2],p],self.a),\
-                     Triangle([self.verts[0],\
-                               self.verts[1],p],self.a)\
+        adjacents = [
+                     Triangle([self.verts[0],
+                               self.verts[2],p],self.a),
+                     Triangle([self.verts[0],
+                               self.verts[1],p],self.a)
                     ]
         
         self.children = [opposite]+adjacents
@@ -111,29 +122,32 @@ class Triangle:
         for child in self.children:
             child.findContents(self.contents)
 
+
     def tostr(self):
         # Just a string representation of the triangle
         return str([self.a.node[self.verts[i]]['name'] for i in range(3)])
+
 
     def buildFinal(self):
 #        print 'building final',self.tostr()
         if self.exterior:
             # Avoid making the final the link origin when possible
 #            print self.tostr(),'is exterior'
-            try_ordered_edge(self.a,self.verts[1],\
+            try_ordered_edge(self.a,self.verts[1],
                                self.verts[0],self.exterior)
-            try_ordered_edge(self.a,self.verts[2],\
+            try_ordered_edge(self.a,self.verts[2],
                                self.verts[0],self.exterior)
         else:
 #            print self.tostr(),'is NOT exterior'
-            try_ordered_edge(self.a,self.verts[0],\
+            try_ordered_edge(self.a,self.verts[0],
                                self.verts[1],self.exterior)
-            try_ordered_edge(self.a,self.verts[0],\
+            try_ordered_edge(self.a,self.verts[0],
                                self.verts[2],self.exterior)
 
         if len(self.children) > 0:
             for i in [1,2]:
                 self.children[i].buildFinal()
+
 
     def buildExceptFinal(self):
 #        print 'building EXCEPT final',self.tostr()
@@ -149,28 +163,29 @@ class Triangle:
         for child in self.children[1:3]:
             child.buildExceptFinal()
 
+
     def buildGraph(self):
 #        print 'building',self.tostr()
         # A first generation triangle could have its final vertex's edges already completed by neighbors. This will cause the first generation to be completed when the opposite edge is added which complicates  completing inside descendents. This could be solved by choosing a new final vertex (or carefully choosing the order of completion of first generation triangles).
-        if (                                                \
-            self.a.has_edge(self.verts[0],self.verts[1]) or \
-            self.a.has_edge(self.verts[1],self.verts[0])    \
-           ) and                                            \
-           (                                                \
-            self.a.has_edge(self.verts[0],self.verts[2]) or \
-            self.a.has_edge(self.verts[2],self.verts[0])    \
-           ):
-#            print 'Final vertex completed!!!'
+        if (
+                self.a.has_edge(self.verts[0],self.verts[1]) or
+                self.a.has_edge(self.verts[1],self.verts[0])
+               ) and (
+                self.a.has_edge(self.verts[0],self.verts[2]) or
+                self.a.has_edge(self.verts[2],self.verts[0])
+               ):
             raise Deadend('Final vertex completed by neighbors')
         self.buildExceptFinal()
         self.buildFinal()
 
-    def contains(self,pt):
-        return np.all(np.sum(self.orths*(pt-self.pts),1) < 0)
+
+    # def contains(self,pt):
+    #    return np.all(np.sum(self.orths*(pt-self.pts),1) < 0)
+
 
     # Attach to each edge a list of fields that it completes
     def markEdgesWithFields(self):
-        edges = [(0,0)]*3
+        edges = [(0,0)] * 3
         for i in range(3):
             p = self.verts[i-1]
             q = self.verts[i-2]
@@ -178,26 +193,30 @@ class Triangle:
                 p,q = q,p
             # The graph should have been completed by now, so the edge p,q exists
             edges[i] = (p,q)
+            logger.debug('adding edge %d: %s', i, (p, q))
             if not self.a.has_edge(p,q):
-                print 'a does NOT have edge',p,q
-                print 'there is a programming error'
-                print 'a only has the edges:'
-                for p,q in self.a.edges_iter():
-                    print p,q
-                print 'a has %s 1st gen triangles:'%len(self.a.triangulation)
+                logger.debug('a does NOT have edge p=%s, q=%s', p, q)
+                logger.debug('there is a programming error')
+                logger.debug('a only has the edges:')
+                for p, q in self.a.edges_iter():
+                    logger.debug(p, q)
+                logger.debug('a has %s 1st gen triangles:', len(self.a.triangulation))
                 for t in self.a.triangulation:
-                    print t.verts
+                    logger.debug(t.verts)
 
-        edgeOrders = [self.a.edge[p][q]['order'] for p,q in edges]
+        edgeOrders = [self.a.edges[p, q]['order'] for p, q in edges]
+        logger.debug('edgeOrders=%s', edgeOrders)
 
         lastInd = np.argmax(edgeOrders)
         # The edge that completes this triangle
-        p,q = edges[lastInd]
+        p, q = edges[lastInd]
 
-        self.a.edge[p][q]['fields'].append(self.verts)
+        self.a.edges[p, q]['fields'].append(self.verts)
+        logger.debug('edge %s, fields: %s', (p, q), self.a.edges[p, q]['fields'])
 
         for child in self.children:
             child.markEdgesWithFields()
+
 
     def edgesByDepth(self,depth):
         # Return list of edges of triangles at given depth
@@ -213,7 +232,4 @@ class Triangle:
             return [ (self.verts[i],self.center) for i in range(3) ]
         return [e for child in self.children\
                   for e in child.edgesByDepth(depth-1)]
-
-
-
 

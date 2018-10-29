@@ -1,22 +1,17 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""
-Ingress Maxfield - geometry
-
-Triangles and the like
-
-original version by jpeterbaker
-29 Sept 2014 - tvw V2.0 major updates
-"""
 
 import numpy as np
+np.seterr(divide='ignore', invalid='ignore')
 
 radPERe6degree = np.pi / (180.*10**6)
+
 
 def e6LLtoRads(pts):
     pts = pts.astype(float)
     pts *= radPERe6degree
     return pts
+
 
 def radstoxyz(pts,R=1):
     # Converts degree latitude/longitude to xyz coords
@@ -38,6 +33,7 @@ def radstoxyz(pts,R=1):
     xyz *= R
     return xyz
 
+
 def xyztorads(pts,R=1):
     pts = pts.reshape([-1,3])
     pts = pts/R
@@ -49,6 +45,7 @@ def xyztorads(pts,R=1):
     lng = np.arctan2(y,x)
 
     return np.column_stack([lat,lng])
+
 
 def greatArcAng(x,y):
     '''
@@ -94,12 +91,14 @@ def greatArcAng(x,y):
 
     return angles
 
+
 def sphereDist(x,y,R=6371000):
     '''
     x,y are n x 2 arrays with lattitude, longitude in radians
     '''
     sigma = greatArcAng(x,y)
     return R*sigma
+
 
 def sphereTriContains(pts,x):
     '''
@@ -126,11 +125,13 @@ def sphereTriContains(pts,x):
     # Check whether opposite vertex is always on same side of plane as x
     return np.all( xsign*psign > 0,0)
 
+
 def planeDist(x,y):
     x = x.reshape([-1,2])
     y = y.reshape([-1,2])
 
     return np.sqrt(np.array([ [sum( (a-b)**2 ) for a in y] for b in x ]))
+
 
 def makeLace(n):
     # sequence of perimeter nodes to hit for a lacing-style triangulation
@@ -143,6 +144,7 @@ def makeLace(n):
         lace.append(n//2)
     return lace
 
+
 def rotate(x):
     # rotate the vector(s) in a by one quarter turn counter-clockwise
     if x.ndim == 1:
@@ -151,9 +153,11 @@ def rotate(x):
         x[:,[0,1]] = x[:,[1,0]]
         x[:,0] *= -1
 
+
 def norms(x):
     'Norm per row of x'
     return np.sqrt(np.sum(x**2,1))
+
 
 def gnomonicProj(pts,ptsxyz=None):
     '''
@@ -197,6 +201,7 @@ def gnomonicProj(pts,ptsxyz=None):
     xy = np.column_stack([ -np.sin(theta) , np.cos(theta) ])*r
     return xy
 
+
 def between(a,b,pts):
     # diff will be orthogonal to the line through a,b
     diff = pts[a]-pts[b]
@@ -209,6 +214,7 @@ def between(a,b,pts):
         return None
     else:
         return c
+
 
 def getPerim(pts):
     '''
@@ -248,7 +254,8 @@ def getPerim(pts):
 
     return perimlist
 
-def arc(a,b,c):
+
+def arc(a, b, c):
     '''
     Finds the arc through three points in a plane
     returns z,r,ta,tb,tc
@@ -273,7 +280,7 @@ def arc(a,b,c):
 
     # this is from wikipedia http://en.wikipedia.org/wiki/Circumscribed_circle
     D = 2*(ab[0]*cb[1]-ab[1]*cb[0])
-    z = np.array([ cb[1]*slab - ab[1]*slcb ,\
+    z = np.array([ cb[1]*slab - ab[1]*slcb ,
                    ab[0]*slcb - cb[0]*slab ])/D + b
 
     # the angle a,b,c
@@ -307,12 +314,12 @@ if __name__ == '__main__':
     c = np.array([3., 1])
 
     z,r,ta,tb,tc = arc(a,b,c)
-    print z,r
-    print ta/np.pi
-    print tb/np.pi
-    print tc/np.pi
+    print(z,r)
+    print(ta/np.pi)
+    print(tb/np.pi)
+    print(tc/np.pi)
     z,r,ta,tb,tc = arc(a,c,b)
-    print z,r
-    print ta/np.pi
-    print tb/np.pi
-    print tc/np.pi
+    print(z,r)
+    print(ta/np.pi)
+    print(tb/np.pi)
+    print(tc/np.pi)

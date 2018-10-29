@@ -1,274 +1,182 @@
-#! /usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Ingress Maxfield - makePlan.py
 
-usage: makePlan.py [-h] [-v] [-g] [-n NUM_AGENTS] [-s SAMPLES] [-d OUTPUT_DIR]
-                   [-f OUTPUT_FILE]
-                   input_file
-
-Ingress Maxfield - Maximize the number of links and fields, and thus AP, for a
-collection of portals in the game Ingress.
-
-positional arguments:
-  input_file            Input semi-colon delimited portal file
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -v, --version         show program's version number and exit
-  -g, --google          Make maps with google maps API. Default: False
-  -a, --api_key         Google API key for google maps. Default: None
-  -n NUM_AGENTS, --num_agents NUM_AGENTS
-                        Number of agents. Default: 1
-  -s SAMPLES, --samples SAMPLES
-                        Number of iterations to perform. More iterations may
-                        improve results, but will take longer to process.
-                        Default: 50
-  -d OUTPUT_DIR, --output_dir OUTPUT_DIR
-                        Directory for results. Default: this directory
-  -f OUTPUT_FILE, --output_file OUTPUT_FILE
-                        Filename for pickle object. Default: plan.pkl
-
-Original version by jpeterbaker
-22 July 2014 - tvw updates csv file format
-15 August 2014 - tvw updates with google API, adds -s,
-                 switchted to ; delimited file
-29 Sept 2014 - tvw V2.0 major update to new version
-21 April 2015 - tvw V2.1 force data read to be string
-"""
+__author__ = 'Konstantin Ryabitsev <icon@mricon.com>'
 
 import sys
 import os
 import argparse
 import networkx as nx
 import numpy as np
-import pandas as pd
-from lib import maxfield,PlanPrinterMap,geometry,agentOrder
-import pickle
-import signal
+# import pickle
 
-import matplotlib.pyplot as plt
+from lib import gsheets, geometry, maxfield # PlanPrinterMap, geometry, agentOrder
+
+import logging
+logger = logging.getLogger(__name__)
 
 # version number
-_V_ = '2.0.2'
+_V_ = '3.0.0'
 # max portals allowed
-_MAX_PORTALS_ = 50
+_MAX_PORTALS_ = 25
 
+
+# noinspection PyUnresolvedReferences
 def main():
-    description=("Ingress Maxfield - Maximize the number of links "
-                 "and fields, and thus AP, for a collection of "
-                 "portals in the game Ingress.")
-    parser = argparse.ArgumentParser(description=description,
-                                     prog="makePlan.py")
-    parser.add_argument('-v','--version',action='version',
-                        version="Ingress Maxfield v{0}".format(_V_))
-    parser.add_argument('-g','--google',action='store_true',
-                        help='Make maps with google maps API. Default: False')
-    parser.add_argument('-a','--api_key',default=None,
-                        help='Google API key for Google maps. Default: None')
-    parser.add_argument('-t', '--google_token',default=None,
-                        help='Path to the google token for writing to Google Spreadsheets')
-    parser.add_argument('-i','--iterations',type=int,default=10000,
-                        help="Number of iterations to "
-                        "perform. More iterations may improve "
-                        "results, but will take longer to process. "
-                        "Default: 10000")
-    parser.add_argument('-k','--maxkeys',type=int, default='3',
-                        help='Maximum lacking keys per portal. Default: 3')
-    parser.add_argument('input_file',
-                        help="Input semi-colon delimited portal file")
-    parser.add_argument('-d','--output_dir',default='',
-                        help="Directory for results. Default: "
-                        "this directory")
-    parser.add_argument('-f','--output_file',default='plan.pkl',
-                        help="Filename for pickle object. Default: "
-                        "plan.pkl")
-    parser.add_argument('-p','--plots',action='store_true',
-                        default=False,
-                        help="Generate graphs and plots. Default: False")
-    args = vars(parser.parse_args())
+    description = ('Ingress Maxfield - Maximize the number of links '
+                   'and fields, and thus AP, for a collection of '
+                   'portals in the game Ingress.')
 
-    GREEN = '#3BF256' # Actual faction text colors in the app
-    BLUE  = '#2ABBFF'
-    # Use google?
-    useGoogle = args['google']
-    api_key = args['api_key']
+    parser = argparse.ArgumentParser(description=description, prog='makePlan.py',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-t', '--google_token', default='token.json',
+                        help='Path to the google token for manipulating Google Spreadsheets')
+    parser.add_argument('-s', '--sheetid', default=None, required=True,
+                        help='The Google Spreadsheet ID with portal definitions.')
+    parser.add_argument('-i', '--iterations', type=int, default=10000,
+                        help='Number of iterations to perform. More iterations may improve '
+                        'results, but will take longer to process.')
+    parser.add_argument('-k', '--maxkeys', type=int, default='6',
+                        help='Maximum lacking keys per portal')
+    #parser.add_argument('-f','--output_file',default='plan.pkl',
+    #                    help="Filename for pickle object. Default: "
+    #                    "plan.pkl")
+    #parser.add_argument('-p', '--plots', action='store_true', default=False,
+    #                    help='Generate graphs and plots')
+    parser.add_argument('-m', '--travelmode', default='walking',
+                        help='Travel mode (walking, bicycling, driving, transit).')
+    parser.add_argument('-l', '--log', default=None,
+                        help='Log file where to log processing info')
+    parser.add_argument('-d', '--debug', action='store_true', default=False,
+                        help='Add debug information to the logfile')
+    parser.add_argument('-q', '--quiet', action='store_true', default=False,
+                        help='Only output errors to the stdout')
+    args = parser.parse_args()
 
-    output_directory = args["output_dir"]
-    # add ending separator
-    if output_directory[-1] != os.sep:
-        output_directory += os.sep
-    # create directory if doesn't exist
-    if not os.path.isdir(output_directory):
-        os.mkdir(output_directory)
-    output_file = args["output_file"]
-    if output_file[-4:] != '.pkl':
-        output_file += ".pkl"
+    #output_file = args["output_file"]
+    #if output_file[-4:] != '.pkl':
+    #    output_file += ".pkl"
 
-    # I broke multi-agent stuff, and I don't care
-    nagents = 1
-    if nagents < 0:
-        sys.exit("Number of agents should be positive")
+    if args.iterations < 0:
+        parser.error('Number of extra samples should be positive')
 
-    EXTRA_SAMPLES = args["iterations"]
-    if EXTRA_SAMPLES < 0:
-        sys.exit("Number of extra samples should be positive")
+    global logger
+    logger = logging.getLogger('maxfield3')
+    logger.setLevel(logging.DEBUG)
 
-    input_file = args['input_file']
+    if args.log:
+        ch = logging.FileHandler(args.log)
+        formatter = logging.Formatter(
+            '{%(module)s:%(funcName)s:%(lineno)s} %(message)s')
+        ch.setFormatter(formatter)
 
-    if input_file[-3:] != 'pkl':
-        # If the input file is a portal list, let's set things up
-        a = nx.DiGraph() # network tool
-        locs = [] # portal coordinates
-        # each line should be name;intel_link;keys
-        portals = pd.read_table(input_file,sep=';',
-                                comment='#',index_col=False,
-                                names=['name','link','keys'],dtype=str)
-        portals = np.array(portals)
-        portals = np.array([portal for portal in portals if (isinstance(portal[0], basestring) and isinstance(portal[1], basestring))])
-        print "Found {0} portals in portal list.".format(len(portals))
-        if len(portals) < 3:
-            sys.exit("Error: Must have more than 2 portals!")
-        if len(portals) > _MAX_PORTALS_:
-            sys.exit("Error: Portal limit is {0}".\
-                     format(_MAX_PORTALS_))
-        for num,portal in enumerate(portals):
-            if len(portal) < 3:
-                print "Error! Portal ",portal[0]," has a formatting problem."
-                sys.exit()
-            a.add_node(num)
-            a.node[num]['name'] = portal[0]
-            coords = (portal[1].split('pll='))
-            if len(coords) < 2:
-                print "Error! Portal ",portal[0]," has a formatting problem."
-                sys.exit()
-            coord_parts = coords[1].split(',')
-            lat = int(float(coord_parts[0]) * 1.e6)
-            lon = int(float(coord_parts[1]) * 1.e6)
-            locs.append(np.array([lat,lon],dtype=float))
-            try:
-                keys = int(portal[2])
-                a.node[num]['keys'] = keys
-            except ValueError:
-                a.node[num]['keys'] = 0
+        if args.debug:
+            ch.setLevel(logging.DEBUG)
+        else:
+            ch.setLevel(logging.INFO)
 
-        n = a.order() # number of nodes
-        locs = np.array(locs,dtype=float)
+        logger.addHandler(ch)
 
-        # Convert coords to radians, then to cartesian, then to
-        # gnomonic projection
-        locs = geometry.e6LLtoRads(locs)
-        xyz  = geometry.radstoxyz(locs)
-        xy   = geometry.gnomonicProj(locs,xyz)
+    ch = logging.StreamHandler()
+    formatter = logging.Formatter('%(message)s')
+    ch.setFormatter(formatter)
 
-        for i in xrange(n):
-            a.node[i]['geo'] = locs[i]
-            a.node[i]['xyz'] = xyz[i]
-            a.node[i]['xy' ] = xy[i]
+    if args.quiet:
+        ch.setLevel(logging.CRITICAL)
+    else:
+        ch.setLevel(logging.INFO)
 
-        bestgraph = None
-        bestdist = np.inf
-        bestkm = None
-        sinceImprove = 0
-        maxKeys = args['maxkeys']
-        print('Finding the shortest plan with max %s lacking keys' % maxKeys)
-        print('Ctrl-C to exit early')
+    logger.addHandler(ch)
 
-        try:
-            while sinceImprove<EXTRA_SAMPLES:
-                b = a.copy()
+    gs = gsheets.setup(args.google_token)
 
-                sinceImprove += 1
+    portals, blockers = gsheets.get_portals_from_sheet(gs, args.sheetid)
+    logger.info('Considering %d portals', len(portals))
 
+    if len(portals) < 3:
+        logger.critical('Must have more than 2 portals!')
+        sys.exit(1)
+
+    if len(portals) > _MAX_PORTALS_:
+        logger.critical('Portal limit is %d', _MAX_PORTALS_)
+
+    a = maxfield.populateGraph(portals)
+
+    bestplan = None
+    bestdist = np.inf
+    bestkm = None
+    counter = 0
+
+    ab = None
+    if blockers:
+        ab = maxfield.populateGraph(blockers)
+
+    logger.info('Finding the shortest plan with max %s lacking keys', args.maxkeys)
+    logger.info('Ctrl-C to exit early')
+
+    try:
+        while counter < args.iterations:
+            b = a.copy()
+            counter += 1
+
+            if not args.quiet:
                 if bestkm is not None:
-                    sys.stdout.write('\r(%0.2f km best): %s/%s      ' % (bestkm, sinceImprove, EXTRA_SAMPLES))
+                    sys.stdout.write('\r(%0.2f km best): %s/%s      ' % (
+                        bestkm, counter, args.iterations))
                     sys.stdout.flush()
 
-                if not maxfield.maxFields(b):
-                    print 'Randomization failure\nThe program may work if you try again. It is more likely to work if you remove some portals.'
-                    continue
+            if not maxfield.maxFields(b):
+                logger.debug('Could not find a triangulation')
+                continue
 
-                # do any of the portals require more than maxkeys
-                sane_key_reqs = True
-                sane_out_links = True
-                for i in range(len(b.node)):
-                    if b.out_degree(i) > 8:
-                        sane_out_links = False
-                        break
-                    keylack = max(b.in_degree(i)-b.node[i]['keys'],0)
-                    if keylack > maxKeys:
-                        # Ignoring this plan
-                        sane_key_reqs = False
-                        break
+            for t in b.triangulation:
+                t.markEdgesWithFields()
 
-                if not sane_key_reqs or not sane_out_links:
-                    continue
+            maxfield.improveEdgeOrder(b)
 
-                # Attach to each edge a list of fields that it completes
-                # catch no triangulation (bad portal file?)
-                try:
-                    for t in b.triangulation:
-                        t.markEdgesWithFields()
-                except AttributeError:
-                    # ignore this attempt
-                    continue
+            # do any of the portals require more than maxkeys
+            sane_key_reqs = True
+            for i in range(len(b.node)):
+                if b.in_degree(i) > args.maxkeys:
+                    sane_key_reqs = False
+                    break
 
-                totaldist = agentOrder.improveEdgeOrder(b, bestdist)
+            if not sane_key_reqs:
+                logger.debug('Too many keys required, ignoring plan')
+                continue
 
-                if totaldist < bestdist:
-                    print
-                    sinceImprove = 0
-                    bestgraph = b
-                    bestdist  = totaldist
-                    bestkm = bestdist/float(1000)
+            sane_out_links = True
+            for i in range(len(b.node)):
+                if b.out_degree(i) > 8:
+                    sane_out_links = False
+                    break
 
-        except KeyboardInterrupt:
-            print()
-            print('Exiting loop')
-            pass
+            if not sane_out_links:
+                logger.debug('Too many outgoing links, ignoring plan')
+                continue
 
-        print
-        if bestgraph == None:
-            print 'EXITING RANDOMIZATION LOOP WITHOUT SOLUTION!'
-            print ''
-            exit()
+            workplan = maxfield.makeWorkPlan(b, ab)
+            totaldist = maxfield.getWorkplanDist(b, workplan)
 
-        a = bestgraph
+            if totaldist < bestdist:
+                counter = 0
+                bestplan = workplan
+                bestdist = totaldist
+                bestkm = bestdist/float(1000)
 
-        with open(output_directory+output_file,'w') as fout:
-            pickle.dump(a,fout)
-    else:
-        with open(input_file,'r') as fin:
-            a = pickle.load(fin)
+    except KeyboardInterrupt:
+        print()
+        print('Exiting loop')
+        pass
 
-    PP = PlanPrinterMap.PlanPrinter(a,output_directory,nagents,useGoogle=useGoogle,
-                                    api_key=api_key)
-    PP.keyPrep()
-    PP.agentKeys()
-    PP.agentLinks()
-    PP.makeODS()
-    if args['google_token']:
-        gstitle = 'Ingress: %s' % os.path.basename(input_file)
-        PP.makeGoogleSheet(title=gstitle, tokenfile=args['google_token'])
+    if not args.quiet:
+        print()
 
-    # These make step-by-step instructional images
-    # Note, that these don't necessarily reflect the order
-    # in the google spreadsheet
-    if args['plots']:
-        PP.planMap(useGoogle=useGoogle)
-        PP.animate(useGoogle=useGoogle)
-        PP.split3instruct(useGoogle=useGoogle)
+    if bestplan is None:
+        logger.critical('Could not find a solution for this list of portals.')
+        sys.exit(1)
 
-    print "Number of portals: {0}".format(PP.num_portals)
-    print "Number of links: {0}".format(PP.num_links)
-    print "Number of fields: {0}".format(PP.num_fields)
-    portal_ap = (125*8 + 500 + 250)*PP.num_portals
-    link_ap = 313 * PP.num_links
-    field_ap = 1250 * PP.num_fields
-    #print "AP from portals capture: {0}".format(portal_ap)
-    print "AP from link creation: {0}".format(link_ap)
-    print "AP from field creation: {0}".format(field_ap)
-    print "Total AP: {0}".format(portal_ap+link_ap+field_ap)
+    gsheets.write_workplan(gs, args.sheetid, a, bestplan, args.travelmode)
 
 if __name__ == "__main__":
     main()
