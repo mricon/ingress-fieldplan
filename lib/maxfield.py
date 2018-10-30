@@ -253,8 +253,9 @@ def improveEdgeOrder(a):
                     a.fixes.append('r%d: fixed exact ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
                 else:
                     dist_to_prev = getPortalDistance(a, prev_origin, p)
+                    dist_to_next = getPortalDistance(a, p, next_origin)
                     dist_prev_to_next = getPortalDistance(a, prev_origin, next_origin)
-                    if dist_to_prev > dist_prev_to_next and next_origin == q:
+                    if next_origin == q and (dist_to_prev+dist_to_next)/2 > dist_prev_to_next:
                         reverse_edge = True
                         a.fixes.append('r%d: fixed inefficient ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
 
