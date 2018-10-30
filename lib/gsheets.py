@@ -76,6 +76,24 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
         'driving': u"\U0001F697",
     }
 
+    logger.info('orig_linkplan:')
+    for line in a.orig_linkplan:
+        logger.info('    %s', line)
+    logger.info('    len: %s', len(a.orig_linkplan))
+    logger.info('fixes:')
+    for line in a.fixes:
+        logger.info('    %s', line)
+    logger.info('fixed linkplan:')
+    for line in a.linkplan:
+        logger.info('    %s', line)
+    logger.info('    len: %s', len(a.linkplan))
+    logger.info('captureplan:')
+    for line in a.captureplan:
+        logger.info('    %s', line)
+    logger.info('workplan:')
+    for line in workplan:
+        logger.info('    %s', line)
+
     # Track which portals we've already captured
     # (easier than going through the list backwards)
     prev_p = None
@@ -92,17 +110,17 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
             needkeys = 0
             # Track when we leave this portal
             lastvisit = True
-            left_p = False
+            same_p = True
             for fp, fq, ff in workplan[plan_at:]:
                 if fp == p:
                     # Are we still at the same portal?
-                    if not left_p:
+                    if same_p:
                         continue
                     lastvisit = False
                     break
                 else:
                     # we're at a different portal
-                    left_p = True
+                    same_p = False
                 if fq and fq == p:
                     # Future link to this portal
                     needkeys += 1
@@ -129,23 +147,26 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                     logger.info('-->Moving to %s (%s)', a.node[p]['name'], nicedist)
                 else:
                     planrows.append((u'▼',))
-                    logger.info('--|Hacking at %s', a.node[p]['name'])
 
+            logger.info('--|Hacking at %s', a.node[p]['name'])
             planrows.append(('P', a.node[p]['name']))
 
             # Are we at a blocker?
             if 'blocker' in a.node[p]:
                 planrows.append(('X', 'destroy blocker'))
+                logger.info('--|X: destroy blocker')
                 # Nothing else here
                 prev_p = p
                 continue
 
             if needkeys:
                 planrows.append(('H', '%d total keys' % needkeys))
+                logger.info('--|H: need %d total keys', needkeys)
 
             if lastvisit:
                 # How many total links to and from this portal?
                 planrows.append(('S', '%d out, %d in' % (a.out_degree(p), a.in_degree(p))))
+                logger.info('--|S: %d out, %d in', a.out_degree(p), a.in_degree(p))
 
             prev_p = p
 
@@ -158,7 +179,7 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                 action = 'F'
 
             planrows.append((action, u'▶%s' % a.node[q]['name']))
-            logger.info('    \--> %s (%s)', a.node[q]['name'], action)
+            logger.info('  \%s--> %s', action, a.node[q]['name'])
 
     totalkm = totaldist/float(1000)
     logger.info('Total workplan distance: %0.2f km', totalkm)

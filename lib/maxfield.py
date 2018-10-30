@@ -117,6 +117,8 @@ def makeWorkPlan(a, ab=None):
     else:
         dist_ordered = _capture_cache[startp]
 
+    a.captureplan = dist_ordered
+
     # Make a unified workplan
     workplan = []
     p_captured = []
@@ -128,6 +130,7 @@ def makeWorkPlan(a, ab=None):
         for cp in p_captured:
             if (p, cp, False) in linkplan:
                 # Yes, found a link we can make early
+                a.fixes.append('rpost: moved (%s, %s, False) into capture plan' % (p, cp))
                 workplan.append((p, cp, False))
                 linkplan.remove((p, cp, False))
                 links_moved = True
@@ -156,102 +159,120 @@ def getWorkplanDist(a, workplan):
 
 
 def improveEdgeOrder(a):
+    improved = False
     m = a.size()
     # If link i is e then orderedEdges[i]=e
     orderedEdges = [-1] * m
 
+    # Stick original plan into a for debug purposes
     for p, q in a.edges():
         orderedEdges[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']) > 0)
+    a.orig_linkplan = list(orderedEdges)
+    a.fixes = list()
+    rcount = 0
 
-    logger.debug('orderedEdges before improvement: %s', orderedEdges)
-    for j in range(1, m):
-        origin, q, f = orderedEdges[j]
-        # Only move those that don't complete fields
-        if f:
-            continue
+    while True:
+        rcount += 1
 
-        # The first time this portal is used as an origin
-        i = 0
-        while orderedEdges[i][0] != origin:
-            i += 1
+        for j in range(1, m):
+            origin, q, f = orderedEdges[j]
+            # Only move those that don't complete fields
+            if f:
+                continue
 
-        if i < j:
-            logger.debug('moving %s before %s',  orderedEdges[j], orderedEdges[i])
-            # Move link j to be just before link i
-            orderedEdges =  (orderedEdges[   :i] +
-                            [orderedEdges[  j  ]]+
-                             orderedEdges[i  :j] +
-                             orderedEdges[j+1: ])
+            # The first time this portal is used as an origin
+            i = 0
+            while orderedEdges[i][0] != origin:
+                i += 1
 
-    prev_origin = None
-    prev_origin_created_fields = False
-    o_starts = []
-    z = None
-    for i in range(m):
-        p, q, f = orderedEdges[i]
-        if prev_origin != p:
-            # we moved to a new origin
-            if z and not prev_origin_created_fields:
-                # previous origin didn't create any fields, so move it
-                # to happen right before the closest located portal
-                # that we've already been to before
-                closest_node_pos = 0
-                if len(o_starts) > 2:
-                    shortest_hop = None
-                    curpos = a.node[prev_origin]['geo']
-                    for o_seen, o_pos in o_starts[:-1]:
-                        # calculate distance to this portal
-                        dist = getPortalDistance(a, prev_origin, o_seen)
-                        if shortest_hop is None or dist < shortest_hop:
-                            shortest_hop = dist
-                            closest_node_pos = o_pos
+            if i < j:
+                a.fixes.append('r%d: moved %s before %s' % (rcount, orderedEdges[j], orderedEdges[i]))
+                improved = True
+                # Move link j to be just before link i
+                orderedEdges =  (orderedEdges[   :i] +
+                                [orderedEdges[  j  ]]+
+                                 orderedEdges[i  :j] +
+                                 orderedEdges[j+1: ])
 
-                logger.debug('moving %s before %s',  z, closest_node_pos)
-                orderedEdges = (orderedEdges[:closest_node_pos] +
-                                orderedEdges[z:i] +
-                                orderedEdges[closest_node_pos:z] +
-                                orderedEdges[i:])
+        prev_origin = None
+        prev_origin_created_fields = False
+        o_starts = []
+        z = None
+        for i in range(m):
+            p, q, f = orderedEdges[i]
+            if prev_origin != p:
+                # we moved to a new origin
+                if z and not prev_origin_created_fields:
+                    # previous origin didn't create any fields, so move it
+                    # to happen right before the closest located portal
+                    # that we've already been to before
+                    closest_node_pos = 0
+                    if len(o_starts) > 2:
+                        shortest_hop = None
+                        curpos = a.node[prev_origin]['geo']
+                        for o_seen, o_pos in o_starts[:-1]:
+                            # calculate distance to this portal
+                            dist = getPortalDistance(a, prev_origin, o_seen)
+                            if shortest_hop is None or dist < shortest_hop:
+                                shortest_hop = dist
+                                closest_node_pos = o_pos
 
-            prev_origin = p
-            o_starts.append((p,i))
-            prev_origin_created_fields = False
-            z = i
+                    a.fixes.append('r%d: moved %s before %s' % (rcount, orderedEdges[z], orderedEdges[closest_node_pos]))
+                    improved = True
+                    orderedEdges = (orderedEdges[:closest_node_pos] +
+                                    orderedEdges[z:i] +
+                                    orderedEdges[closest_node_pos:z] +
+                                    orderedEdges[i:])
 
-        # Only move those that don't complete fields
-        if f:
-            prev_origin_created_fields = True
+                prev_origin = p
+                o_starts.append((p,i))
+                prev_origin_created_fields = False
+                z = i
 
-    # avoid this stupid single-portal pingpong:
-    #   portal_a -> foo
-    #   portal_b -> portal_a
-    #   portal_a -> bar
-    # This should be optimized into:
-    #   portal_a -> foo
-    #   portal_a -> portal_b
-    #   portal_a -> bar
-    for i in range(1, m-1):
-        p, q, f = orderedEdges[i]
-        prev_origin = orderedEdges[i-1][0]
-        if prev_origin != p:
-            # we moved to a new origin
-            next_origin = orderedEdges[i+1][0]
-            if prev_origin == q and next_origin == prev_origin:
-                logger.debug('fixed ping-pong %s->%s->%s', prev_origin, p, next_origin)
-                # reverse this link
-                attrs = a.edges[p, q]
-                a.add_edge(q, p, **attrs)
-                a.remove_edge(p, q)
-                orderedEdges[i] = (q, p, f)
+            # Only move those that don't complete fields
+            if f:
+                prev_origin_created_fields = True
 
-    logger.debug('orderedEdges after improvement: %s', orderedEdges)
-    #    print
-    for i in range(1, m):
-        p = orderedEdges[i][0]
-        prev_p = orderedEdges[i-1][0]
-        if prev_p != p:
-            dist = getPortalDistance(a, prev_p, p)
-            logger.debug('Moved %s -> %s : %s', a.node[prev_p]['name'],
-                         a.node[p]['name'], dist)
+        # avoid this stupid single-portal pingpong:
+        #   portal_a -> foo
+        #   portal_b -> portal_a (or much closer than portal_b)
+        #   portal_a -> bar
+        # This should be optimized into:
+        #   portal_a -> foo
+        #   portal_a -> portal_b
+        #   portal_a -> bar
+        for i in range(1, m-1):
+            p, q, f = orderedEdges[i]
+            prev_origin = orderedEdges[i-1][0]
+            if prev_origin != p:
+                # we moved to a new origin
+                next_origin = orderedEdges[i+1][0]
+                reverse_edge = False
+                if prev_origin == q and next_origin == prev_origin:
+                    reverse_edge = True
+                    a.fixes.append('r%d: fixed exact ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
+                else:
+                    dist_to_prev = getPortalDistance(a, prev_origin, p)
+                    dist_prev_to_next = getPortalDistance(a, prev_origin, next_origin)
+                    if dist_to_prev > dist_prev_to_next and next_origin == q:
+                        reverse_edge = True
+                        a.fixes.append('r%d: fixed inefficient ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
+
+                if reverse_edge:
+                    improved = True
+                    # reverse this link
+                    attrs = a.edges[p, q]
+                    a.add_edge(q, p, **attrs)
+                    a.remove_edge(p, q)
+                    orderedEdges[i] = (q, p, f)
+
+        if improved:
+            logger.debug('No further improvements found.')
+            break
+
+    # Stick linkplan into a for debug purposes
+    a.linkplan = list(orderedEdges)
+
 
 
 def removeSince(a,m,t):
