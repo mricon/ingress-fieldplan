@@ -126,9 +126,10 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                     hyperlink = '=HYPERLINK("%s", "%s")' % (mapurl, nicedist)
                     planrows.append((u'▼',))
                     planrows.append((travelmoji[travelmode], hyperlink))
+                    logger.info('-->Moving to %s (%s)', a.node[p]['name'], nicedist)
                 else:
                     planrows.append((u'▼',))
-                    logger.info('--|Working at %s', a.node[p]['name'])
+                    logger.info('--|Hacking at %s', a.node[p]['name'])
 
             planrows.append(('P', a.node[p]['name']))
 
