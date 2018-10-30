@@ -119,21 +119,18 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                     mapurl = 'https://www.google.com/maps/dir/?api=1&origin=%s&destination=%s&travelmode=%s' % (
                         a.node[prev_p]['pll'], a.node[p]['pll'], travelmode
                     )
-                    hyperlink = '=HYPERLINK("%s", "%s")' % (mapurl, travelmoji[travelmode])
-                    planrows.append((u'▼', hyperlink))
+                    if dist >= 500:
+                        nicedist = '%0.1f km' % (dist/float(1000))
+                    else:
+                        nicedist = '%d m' % dist
+                    hyperlink = '=HYPERLINK("%s", "%s")' % (mapurl, nicedist)
+                    planrows.append((u'▼',))
+                    planrows.append((travelmoji[travelmode], hyperlink))
                 else:
                     planrows.append((u'▼',))
+                    logger.info('--|Working at %s', a.node[p]['name'])
 
-            if dist > 80:
-                logger.info('-->Moving to %s (%d m, %d m total)',
-                            a.node[p]['name'], dist, totaldist)
-                if dist >= 500:
-                    planrows.append(('P', '%s (%0.1f km)' % (a.node[p]['name'], dist/float(1000))))
-                else:
-                    planrows.append(('P', '%s (%d m)' % (a.node[p]['name'], dist)))
-            else:
-                planrows.append(('P', a.node[p]['name']))
-                logger.info('--|Working at %s', a.node[p]['name'])
+            planrows.append(('P', a.node[p]['name']))
 
             # Are we at a blocker?
             if 'blocker' in a.node[p]:
