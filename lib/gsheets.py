@@ -21,6 +21,9 @@ def _get_portal_info_from_row(row):
         if row[0][0] == '#':
             # Comment ignored
             return None
+        if not len(row[0][0].strip()):
+            # Row starting with an empty cell ignored
+            return None
         if row[1].find('pll=') < 0:
             logger.debug('link=%s', row[1])
             logger.info('Portal link does not look sane, ignoring')
