@@ -33,9 +33,9 @@ def try_ordered_edge(a,p,q,reversible):
         a.edgeStack.append((p, q))
     except AttributeError:
         a.edgeStack = [ (p,q) ]
-    logger.debug('adding p=%s, q=%s', p, q)
-    logger.debug('edgeStack follows')
-    logger.debug(a.edgeStack)
+    #logger.debug('adding p=%s, q=%s', p, q)
+    #logger.debug('edgeStack follows')
+    #logger.debug(a.edgeStack)
 
 
 class Triangle:

@@ -2,15 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import matplotlib.pyplot as plt
+import matplotlib.animation as anim
 import numpy as np
 import os
 
-from tempfile import mkdtemp
 from matplotlib.patches import Polygon
-
-from apng import APNG
-
-import shutil
 
 import logging
 logger = logging.getLogger('maxfield3')
@@ -40,8 +36,10 @@ def draw_edge(a, s, t, fig, marker, directional=False):
     return eart
 
 
-def make_apng(a, workplan, output):
-    logger.info('Generating the animated PNG of the workplan')
+def make_png_steps(a, workplan, outdir):
+    logger.info('Generating step-by-step pngs of the workplan')
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
 
     GREEN     = ( 0.0 , 1.0 , 0.0 , 0.3)
     BLUE      = ( 0.0 , 0.0 , 1.0 , 0.3)
@@ -50,15 +48,15 @@ def make_apng(a, workplan, output):
 
     portals = np.array([a.node[i]['xy'] for i in a.nodes()]).T
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(11, 8), dpi=80)
     frames = list()
-    tmpd = mkdtemp()
     ax = fig.add_subplot(1, 1, 1)
     ax.axis('off')
 
     ax.plot(portals[0], portals[1], 'ko')
+    ax.set_title('Portals before capture', ha='center')
 
-    filen = os.path.join(tmpd, 'frame_{0:03d}.png'.format(len(frames)))
+    filen = os.path.join(outdir, 'step_{0:03d}.png'.format(len(frames)))
     fig.savefig(filen)
     frames.append(filen)
 
@@ -74,11 +72,16 @@ def make_apng(a, workplan, output):
                 # Show travel edge
                 dist = maxfield.getPortalDistance(a, prev_p, p)
                 torm = draw_edge(a, prev_p, p, ax, 'm:', directional=True)
+                if 'blocker' in a.node[p]:
+                    action = 'Destroy blocker'
+                else:
+                    action = 'Capture'
+
                 if p not in seen_p:
                     if dist > 80:
-                        ax.set_title('Capture %s (%s m)' % (a.node[p]['name'], dist), ha='center')
+                        ax.set_title('%s %s (%s m)' % (action, a.node[p]['name'], dist), ha='center')
                     else:
-                        ax.set_title('Capture %s' % a.node[p]['name'], ha='center')
+                        ax.set_title('%s %s' % (action, a.node[p]['name']), ha='center')
                 else:
                     if dist > 80:
                         ax.set_title('Travel to %s (%s m)' % (a.node[p]['name'], dist), ha='center')
@@ -87,7 +90,7 @@ def make_apng(a, workplan, output):
             else:
                 ax.set_title('Start at %s' % a.node[p]['name'], ha='center')
 
-            filen = os.path.join(tmpd, 'frame_{0:03d}.png'.format(len(frames)))
+            filen = os.path.join(outdir, 'step_{0:03d}.png'.format(len(frames)))
             fig.savefig(filen)
             frames.append(filen)
             for art in torm:
@@ -116,7 +119,7 @@ def make_apng(a, workplan, output):
             for field in fields:
                 torm.append(ax.add_patch(field))
 
-        filen = os.path.join(tmpd, 'frame_{0:03d}.png'.format(len(frames)))
+        filen = os.path.join(outdir, 'step_{0:03d}.png'.format(len(frames)))
         fig.savefig(filen)
         frames.append(filen)
 
@@ -133,11 +136,9 @@ def make_apng(a, workplan, output):
 
     # Save final frame with all completed fields
     ax.set_title('Finish at %s' % a.node[p]['name'], ha='center')
-    filen = os.path.join(tmpd, 'frame_{0:03d}.png'.format(len(frames)))
+    filen = os.path.join(outdir, 'step_{0:03d}.png'.format(len(frames)))
     fig.savefig(filen)
     frames.append(filen)
 
-    APNG.from_files(frames, delay=2000).save(output)
-    shutil.rmtree(tmpd)
-    logger.info('Saved animated png into %s', output)
+    logger.info('Saved step-by-step pngs into %s', outdir)
 

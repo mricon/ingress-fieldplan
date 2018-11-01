@@ -176,8 +176,7 @@ def main():
         sys.exit(1)
 
     if args.plot:
-        animate.make_apng(bestgraph, bestplan, args.plot)
-    sys.exit(0)
+        animate.make_png_steps(bestgraph, bestplan, args.plot)
     gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.travelmode)
 
 if __name__ == "__main__":

@@ -93,7 +93,9 @@ def makeWorkPlan(a, ab=None):
 
     # Starting with the first portal in the linkplan, make a chain
     # of closest portals not yet visited for the capture/keyhack plan
-    startp = all_p.pop(0)
+    startp = linkplan[0][0]
+    all_p.remove(startp)
+
     if startp not in _capture_cache:
         dist_ordered = [startp]
         while True:
@@ -139,6 +141,14 @@ def makeWorkPlan(a, ab=None):
             workplan.append((p, None, False))
 
         p_captured.append(p)
+
+    #p_captured.append(startp)
+
+    #for p, q, f in linkplan:
+    #    # Quick sanity check
+    #    if q not in p_captured:
+    #        logger.critical('Awooga, linking to a non-captured portal: %s->%s', p, q)
+    #        sys.exit(1)
 
     workplan.extend(linkplan)
     return workplan
