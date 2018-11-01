@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__author__ = 'Konstantin Ryabitsev <icon@mricon.com>'
-
 import sys
 import os
 import argparse
 import networkx as nx
 import numpy as np
-# import pickle
 
-from lib import gsheets, geometry, maxfield # PlanPrinterMap, geometry, agentOrder
+from lib import gsheets, geometry, maxfield, animate
 
 import logging
 logger = logging.getLogger(__name__)
@@ -41,8 +38,8 @@ def main():
     #parser.add_argument('-f','--output_file',default='plan.pkl',
     #                    help="Filename for pickle object. Default: "
     #                    "plan.pkl")
-    #parser.add_argument('-p', '--plots', action='store_true', default=False,
-    #                    help='Generate graphs and plots')
+    parser.add_argument('-p', '--plot', default=None,
+                        help='Save an animated PNG of the workplan into this file.')
     parser.add_argument('-m', '--travelmode', default='walking',
                         help='Travel mode (walking, bicycling, driving, transit).')
     parser.add_argument('-l', '--log', default=None,
@@ -178,6 +175,9 @@ def main():
         logger.critical('Could not find a solution for this list of portals.')
         sys.exit(1)
 
+    if args.plot:
+        animate.make_apng(bestgraph, bestplan, args.plot)
+    sys.exit(0)
     gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.travelmode)
 
 if __name__ == "__main__":
