@@ -128,17 +128,18 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                     # Future link to this portal
                     needkeys += 1
 
+            mapurl = 'https://www.google.com/maps/dir/?api=1&destination=%s&travelmode=%s' % (
+                a.node[p]['pll'], travelmode
+            )
             if prev_p is not None:
                 if links:
                     logger.info('    total links: %d', links)
                 if fields:
                     logger.info('    total fields: %d', fields)
+
                 dist = maxfield.getPortalDistance(a, prev_p, p)
                 if dist > 80:
                     totaldist += dist
-                    mapurl = 'https://www.google.com/maps/dir/?api=1&origin=%s&destination=%s&travelmode=%s' % (
-                        a.node[prev_p]['pll'], a.node[p]['pll'], travelmode
-                    )
                     if dist >= 500:
                         nicedist = '%0.1f km' % (dist/float(1000))
                     else:
@@ -146,9 +147,13 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                     hyperlink = '=HYPERLINK("%s", "%s")' % (mapurl, nicedist)
                     planrows.append((u'▼',))
                     planrows.append((travelmoji[travelmode], hyperlink))
-                    logger.info('-->Moving to %s (%s)', a.node[p]['name'], nicedist)
+                    logger.info('-->Move to %s (%s)', a.node[p]['name'], nicedist)
                 else:
                     planrows.append((u'▼',))
+            else:
+                hyperlink = '=HYPERLINK("%s", "map")' % mapurl
+                planrows.append((travelmoji[travelmode], hyperlink))
+                logger.info('-->Start at %s', a.node[p]['name'])
 
             logger.info('--|At %s', a.node[p]['name'])
             planrows.append(('P', a.node[p]['name']))

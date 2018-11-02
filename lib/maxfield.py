@@ -5,6 +5,8 @@ from lib import geometry
 import logging
 import networkx as nx
 
+from datetime import datetime
+
 from lib.Triangle import Triangle, Deadend
 
 import numpy as np
@@ -19,18 +21,40 @@ logger = logging.getLogger('maxfield3')
 _dist_cache = {}
 _capture_cache = {}
 
+# Stick a gmaps client here if we have a key
+gmapsclient = None
+gmapsmode = 'walking'
+
 
 def getPortalDistance(a, p1, p2):
     global _dist_cache
+    if p1 == p2:
+        return 0
+
     if (p1, p2) in _dist_cache:
         return _dist_cache[(p1, p2)]
     # the reverse distance is the same
     if (p2, p1) in _dist_cache:
         return _dist_cache[(p2, p1)]
 
+    # Do direct distance first
     p1pos = a.node[p1]['geo']
     p2pos = a.node[p2]['geo']
     dist = int(geometry.sphereDist(p1pos, p2pos)[0])
+
+    # If it's over 80 meters and we have a gmaps client key,
+    # look up the actual distance using google maps API
+    if dist > 80 and gmapsclient is not None:
+        p1pos = a.node[p1]['pll']
+        p2pos = a.node[p2]['pll']
+        now = datetime.now()
+        gdir = gmapsclient.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
+        dist = gdir[0]['legs'][0]['distance']['value']
+        logger.info('%s -(%d m)-> %s (Google/%s)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+    else:
+        logger.info('%s -(%d m)-> %s (Direct)', a.node[p1]['name'], dist, a.node[p2]['name'])
+
+
     _dist_cache[(p1, p2)] = dist
     return _dist_cache[(p1, p2)]
 

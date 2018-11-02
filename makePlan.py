@@ -40,6 +40,8 @@ def main():
     #                    "plan.pkl")
     parser.add_argument('-p', '--plot', default=None,
                         help='Save an animated PNG of the workplan into this file.')
+    parser.add_argument('-g', '--gmapskey', default=None,
+                        help='Google Maps API key (for better distances)')
     parser.add_argument('-m', '--travelmode', default='walking',
                         help='Travel mode (walking, bicycling, driving, transit).')
     parser.add_argument('-l', '--log', default=None,
@@ -84,6 +86,12 @@ def main():
         ch.setLevel(logging.INFO)
 
     logger.addHandler(ch)
+
+    if args.gmapskey:
+        import googlemaps
+        gmaps = googlemaps.Client(key='AIzaSyDXodYyMeLgops5Bo7UVrN0gyyIb6oM8-E')
+        maxfield.gmapsclient = gmaps
+        maxfield.gmapsmode = args.travelmode
 
     gs = gsheets.setup(args.google_token)
 
