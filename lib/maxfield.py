@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
+import shelve
+
 from lib import geometry
 import logging
 import networkx as nx
 
 from datetime import datetime
+
+from pathlib import Path
 
 from lib.Triangle import Triangle, Deadend
 
@@ -16,8 +21,11 @@ TRIES_PER_TRI = 10
 
 logger = logging.getLogger('maxfield3')
 
-# Use it to cache distances between portals
-# so we don't continuously re-calculate them
+# Use it to cache distances between coordinates
+# so we don't continuously re-calculate them.
+# Especially useful when using Google Maps for
+# true distances
+_gmap_cache_db = None
 _dist_cache = {}
 _capture_cache = {}
 
@@ -28,6 +36,8 @@ gmapsmode = 'walking'
 
 def getPortalDistance(a, p1, p2):
     global _dist_cache
+    global _gmap_cache_db
+
     if p1 == p2:
         return 0
 
@@ -45,15 +55,32 @@ def getPortalDistance(a, p1, p2):
     # If it's over 80 meters and we have a gmaps client key,
     # look up the actual distance using google maps API
     if dist > 80 and gmapsclient is not None:
+        if _gmap_cache_db is None:
+            home = str(Path.home())
+            # TODO: Invalidate these somehow after a period?
+            cacheloc = os.path.join(home, '.cache', 'ingress-fieldmap')
+            _gmap_cache_db = shelve.open(cacheloc, 'c')
+
         p1pos = a.node[p1]['pll']
         p2pos = a.node[p2]['pll']
-        now = datetime.now()
-        gdir = gmapsclient.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
-        dist = gdir[0]['legs'][0]['distance']['value']
-        logger.info('%s -(%d m)-> %s (Google/%s)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+        dkey = '%s,%s' % (p1pos, p2pos)
+        rkey = '%s,%s' % (p2pos, p1pos)
+
+        if dkey in _gmap_cache_db:
+            dist = _gmap_cache_db[dkey]
+            logger.info('%s -(%d m)-> %s (Google/%s/cached)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+        elif rkey in _gmap_cache_db:
+            dist = _gmap_cache_db[rkey]
+            logger.info('%s -(%d m)-> %s (Google/%s/cached)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+        else:
+            # Perform the lookup
+            now = datetime.now()
+            gdir = gmapsclient.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
+            dist = gdir[0]['legs'][0]['distance']['value']
+            _gmap_cache_db[dkey] = dist
+            logger.info('%s -(%d m)-> %s (Google/%s/lookup)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
     else:
         logger.info('%s -(%d m)-> %s (Direct)', a.node[p1]['name'], dist, a.node[p2]['name'])
-
 
     _dist_cache[(p1, p2)] = dist
     return _dist_cache[(p1, p2)]
