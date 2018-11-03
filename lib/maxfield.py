@@ -22,32 +22,53 @@ np.seterr(divide='ignore', invalid='ignore')
 
 TRIES_PER_TRI = 10
 
-logger = logging.getLogger('maxfield3')
-
-# Use it to cache distances between coordinates
-# so we don't continuously re-calculate them.
-# Especially useful when using Google Maps for
-# true distances
-_gmap_cache_db = None
+logger = logging.getLogger('fieldplan')
 
 _capture_cache = dict()
 _dist_matrix = list()
 
-# Stick a gmaps client here if we have a key
-gmapsclient = None
-gmapsmode = 'walking'
 
-
-def genDistanceMatrix(a):
+def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
     global _dist_matrix
-    global _gmap_cache_db
 
-    n = a.order()
-    if gmapsclient:
+    home = str(Path.home())
+    cachedir = os.path.join(home, '.cache', 'ingress-fieldmap')
+    Path(cachedir).mkdir(parents=True, exist_ok=True)
+    distcachefile = os.path.join(cachedir, 'distcache')
+    # Google Maps lookups are non-free, so cache them aggressively
+    # TODO: Invalidate these somehow after a period?
+    _gmap_cache_db = shelve.open(distcachefile, 'c')
+
+    # Do we have a gmaps key?
+    if gmapskey is None:
+        # Do we have a cached copy in the cache?
+        if 'clientkey' in _gmap_cache_db:
+            gmapskey = _gmap_cache_db['clientkey']
+    else:
+        # save it in the cache db if not present or different
+        if 'clientkey' not in _gmap_cache_db or _gmap_cache_db['clientkey'] != gmapskey:
+            logger.info('Caching google maps key for future lookups')
+            _gmap_cache_db['clientkey'] = gmapskey
+
+    gmaps = None
+    if gmapskey:
+        import googlemaps
+        gmaps = googlemaps.Client(key=gmapskey)
         logger.info('Generating the distance matrix using Google Maps API, may take a moment')
     else:
         logger.info('Generating the distance matrix')
 
+    n = a.order()
+
+    if ab is not None:
+        num = a.order()
+        logger.debug('Adding %s blockers to the matrix', ab.order())
+        for i in range(ab.order()):
+            num += 1
+            attrs = ab.node[i]
+            a.add_node(num, **attrs)
+            a.node[num]['blocker'] = True
+            all_p.append(num)
 
     # We consider any direct distance shorter than 80m as effectively 0,
     # since the agent doesn't need to travel to access both portals.
@@ -61,18 +82,11 @@ def genDistanceMatrix(a):
 
             # If it's over 80 meters and we have a gmaps client key,
             # look up the actual distance using google maps API
-            if dist > 80 and gmapsclient is not None:
-                if _gmap_cache_db is None:
-                    home = str(Path.home())
-                    # Google Maps lookups are non-free, so cache them aggressively
-                    # TODO: Invalidate these somehow after a period?
-                    cacheloc = os.path.join(home, '.cache', 'ingress-fieldmap')
-                    _gmap_cache_db = shelve.open(cacheloc, 'c')
-
+            if dist > 80 and gmaps is not None:
                 p1pos = a.node[p1]['pll']
                 p2pos = a.node[p2]['pll']
-                dkey = '%s,%s' % (p1pos, p2pos)
-                rkey = '%s,%s' % (p2pos, p1pos)
+                dkey = '%s,%s,%s' % (p1pos, p2pos, gmapsmode)
+                rkey = '%s,%s,%s' % (p2pos, p1pos, gmapsmode)
 
                 if dkey in _gmap_cache_db:
                     dist = _gmap_cache_db[dkey]
@@ -83,7 +97,7 @@ def genDistanceMatrix(a):
                 else:
                     # Perform the lookup
                     now = datetime.now()
-                    gdir = gmapsclient.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
+                    gdir = gmaps.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
                     dist = gdir[0]['legs'][0]['distance']['value']
                     _gmap_cache_db[dkey] = dist
                     logger.debug('%s -( %d )-> %s (Google/%s/lookup)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)

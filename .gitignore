@@ -5,3 +5,6 @@ tmp_*
 *.pyc
 courtsquare/
 .idea
+*.swp
+credentials.json
+token.json

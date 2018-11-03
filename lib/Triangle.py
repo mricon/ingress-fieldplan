@@ -7,7 +7,7 @@ import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 
 import logging
-logger = logging.getLogger('maxfield3')
+logger = logging.getLogger('fieldplan')
 
 class Deadend(Exception):
     def __init__(self, s):

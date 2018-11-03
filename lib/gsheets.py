@@ -1,18 +1,33 @@
 # -*- coding: utf-8 -*-
 
+import sys
+import os
+
 from googleapiclient.discovery import build
 from httplib2 import Http
 from oauth2client import file
 
 from lib import maxfield
 
+from pathlib import Path
+
 import logging
-logger = logging.getLogger('maxfield3')
+logger = logging.getLogger('fieldplan')
 
 
-def setup(tokenfile):
+def setup():
+    home = str(Path.home())
+    cachedir = os.path.join(home, '.cache', 'ingress-fieldmap')
+    tokenfile = os.path.join(cachedir, 'token.json')
+    if not os.path.isfile(tokenfile):
+        logger.critical('Did not find token.json. Run obtainGSToken.py first.')
+        sys.exit(1)
     store = file.Storage(tokenfile)
     creds = store.get()
+    if not creds or creds.invalid:
+        logger.critical('Invaid token file in %s. Delete and rerun obtainGSToken.py.', tokenfile)
+        sys.exit(1)
+
     return build('sheets', 'v4', http=creds.authorize(Http()))
 
 

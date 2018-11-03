@@ -9,7 +9,7 @@ import os
 from matplotlib.patches import Polygon
 
 import logging
-logger = logging.getLogger('maxfield3')
+logger = logging.getLogger('fieldplan')
 
 from lib import maxfield
 

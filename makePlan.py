@@ -10,7 +10,7 @@ import numpy as np
 from lib import gsheets, geometry, maxfield, animate
 
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('fieldplan')
 
 # version number
 _V_ = '3.0.0'
@@ -26,8 +26,6 @@ def main():
 
     parser = argparse.ArgumentParser(description=description, prog='makePlan.py',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-t', '--google_token', default='token.json',
-                        help='Path to the google token for manipulating Google Spreadsheets')
     parser.add_argument('-s', '--sheetid', default=None, required=True,
                         help='The Google Spreadsheet ID with portal definitions.')
     parser.add_argument('-i', '--iterations', type=int, default=10000,
@@ -39,7 +37,7 @@ def main():
     #                    help="Filename for pickle object. Default: "
     #                    "plan.pkl")
     parser.add_argument('-p', '--plot', default=None,
-                        help='Save an animated PNG of the workplan into this file.')
+                        help='Save step-by-step PNGs of the workplan into this directory.')
     parser.add_argument('-g', '--gmapskey', default=None,
                         help='Google Maps API key (for better distances)')
     parser.add_argument('-m', '--travelmode', default='walking',
@@ -59,8 +57,6 @@ def main():
     if args.iterations < 0:
         parser.error('Number of extra samples should be positive')
 
-    global logger
-    logger = logging.getLogger('maxfield3')
     logger.setLevel(logging.DEBUG)
 
     if args.log:
@@ -87,13 +83,7 @@ def main():
 
     logger.addHandler(ch)
 
-    if args.gmapskey:
-        import googlemaps
-        gmaps = googlemaps.Client(key='AIzaSyDXodYyMeLgops5Bo7UVrN0gyyIb6oM8-E')
-        maxfield.gmapsclient = gmaps
-        maxfield.gmapsmode = args.travelmode
-
-    gs = gsheets.setup(args.google_token)
+    gs = gsheets.setup()
 
     portals, blockers = gsheets.get_portals_from_sheet(gs, args.sheetid)
     logger.info('Considering %d portals', len(portals))
@@ -106,7 +96,12 @@ def main():
         logger.critical('Portal limit is %d', _MAX_PORTALS_)
 
     a = maxfield.populateGraph(portals)
-    maxfield.genDistanceMatrix(a)
+    ab = None
+    if blockers:
+        ab = maxfield.populateGraph(blockers)
+
+    # Use a copy, because we concat ab to a for blockers distances
+    maxfield.genDistanceMatrix(a.copy(), ab, args.gmapskey, args.travelmode)
 
     bestplan = None
     bestgraph = None
@@ -114,9 +109,6 @@ def main():
     bestkm = None
     counter = 0
 
-    ab = None
-    if blockers:
-        ab = maxfield.populateGraph(blockers)
 
     logger.info('Finding the shortest plan with max %s lacking keys', args.maxkeys)
     logger.info('Ctrl-C to exit early')
