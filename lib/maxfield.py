@@ -136,15 +136,11 @@ def makeWorkPlan(a, ab=None):
     # make a linkplan first
     linkplan = [None] * a.size()
 
-    all_p = []
     for p, q in a.edges():
         linkplan[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']) > 0)
-        if p not in all_p:
-            all_p.append(p)
-        if q not in all_p:
-            all_p.append(q)
 
     # Add blockers we need to destroy
+    all_p = list(range(a.order()))
     if ab is not None:
         num = a.order()
         logger.debug('Adding %s blockers to the plan', ab.order())
@@ -160,7 +156,7 @@ def makeWorkPlan(a, ab=None):
         # Find the portal that's furthest away from the starting portal
         maxdist = 0
         endp = startp
-        for i in range(a.order()):
+        for i in all_p:
             dist = getPortalDistance(startp, i)
             if dist > maxdist:
                 endp = i
@@ -168,16 +164,23 @@ def makeWorkPlan(a, ab=None):
 
         routing = pywrapcp.RoutingModel(len(all_p), 1, [endp], [startp])
 
-        search_parameters = pywrapcp.RoutingModel.DefaultSearchParameters()
         routing.SetArcCostEvaluatorOfAllVehicles(getPortalDistance)
+        search_parameters = pywrapcp.RoutingModel.DefaultSearchParameters()
+        search_parameters.first_solution_strategy = (
+            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
+
         assignment = routing.SolveWithParameters(search_parameters)
-        dist_ordered = list()
+
         index = routing.Start(0)
+        dist_ordered = list()
         while not routing.IsEnd(index):
-            dist_ordered.append(index)
+            node = routing.IndexToNode(index)
+            dist_ordered.append(node)
             index = assignment.Value(routing.NextVar(index))
 
-        dist_ordered.pop(-1)
+        dist_ordered.append(routing.IndexToNode(index))
+        dist_ordered.remove(startp)
+
         _capture_cache[startp] = dist_ordered
     else:
         dist_ordered = _capture_cache[startp]
