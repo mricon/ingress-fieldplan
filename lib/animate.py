@@ -70,7 +70,7 @@ def make_png_steps(a, workplan, outdir):
             ax.plot(p_coords[0], p_coords[1], 'go')
             if prev_p is not None:
                 # Show travel edge
-                dist = maxfield.getPortalDistance(a, prev_p, p)
+                dist = maxfield.getPortalDistance(prev_p, p)
                 torm = draw_edge(a, prev_p, p, ax, 'm:', directional=True)
                 if 'blocker' in a.node[p]:
                     action = 'Destroy blocker'

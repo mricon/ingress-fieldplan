@@ -14,6 +14,9 @@ from pathlib import Path
 
 from lib.Triangle import Triangle, Deadend
 
+from ortools.constraint_solver import pywrapcp
+from ortools.constraint_solver import routing_enums_pb2
+
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 
@@ -26,64 +29,74 @@ logger = logging.getLogger('maxfield3')
 # Especially useful when using Google Maps for
 # true distances
 _gmap_cache_db = None
-_dist_cache = {}
-_capture_cache = {}
+
+_capture_cache = dict()
+_dist_matrix = list()
 
 # Stick a gmaps client here if we have a key
 gmapsclient = None
 gmapsmode = 'walking'
 
 
-def getPortalDistance(a, p1, p2):
-    global _dist_cache
+def genDistanceMatrix(a):
+    global _dist_matrix
     global _gmap_cache_db
 
-    if p1 == p2:
-        return 0
-
-    if (p1, p2) in _dist_cache:
-        return _dist_cache[(p1, p2)]
-    # the reverse distance is the same
-    if (p2, p1) in _dist_cache:
-        return _dist_cache[(p2, p1)]
-
-    # Do direct distance first
-    p1pos = a.node[p1]['geo']
-    p2pos = a.node[p2]['geo']
-    dist = int(geometry.sphereDist(p1pos, p2pos)[0])
-
-    # If it's over 80 meters and we have a gmaps client key,
-    # look up the actual distance using google maps API
-    if dist > 80 and gmapsclient is not None:
-        if _gmap_cache_db is None:
-            home = str(Path.home())
-            # TODO: Invalidate these somehow after a period?
-            cacheloc = os.path.join(home, '.cache', 'ingress-fieldmap')
-            _gmap_cache_db = shelve.open(cacheloc, 'c')
-
-        p1pos = a.node[p1]['pll']
-        p2pos = a.node[p2]['pll']
-        dkey = '%s,%s' % (p1pos, p2pos)
-        rkey = '%s,%s' % (p2pos, p1pos)
-
-        if dkey in _gmap_cache_db:
-            dist = _gmap_cache_db[dkey]
-            logger.info('%s -(%d m)-> %s (Google/%s/cached)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
-        elif rkey in _gmap_cache_db:
-            dist = _gmap_cache_db[rkey]
-            logger.info('%s -(%d m)-> %s (Google/%s/cached)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
-        else:
-            # Perform the lookup
-            now = datetime.now()
-            gdir = gmapsclient.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
-            dist = gdir[0]['legs'][0]['distance']['value']
-            _gmap_cache_db[dkey] = dist
-            logger.info('%s -(%d m)-> %s (Google/%s/lookup)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+    n = a.order()
+    if gmapsclient:
+        logger.info('Generating the distance matrix using Google Maps API, may take a moment')
     else:
-        logger.info('%s -(%d m)-> %s (Direct)', a.node[p1]['name'], dist, a.node[p2]['name'])
+        logger.info('Generating the distance matrix')
 
-    _dist_cache[(p1, p2)] = dist
-    return _dist_cache[(p1, p2)]
+
+    # We consider any direct distance shorter than 80m as effectively 0,
+    # since the agent doesn't need to travel to access both portals.
+    for p1 in range(n):
+        matrow = list()
+        for p2 in range(n):
+            # Do direct distance first
+            p1pos = a.node[p1]['geo']
+            p2pos = a.node[p2]['geo']
+            dist = int(geometry.sphereDist(p1pos, p2pos)[0])
+
+            # If it's over 80 meters and we have a gmaps client key,
+            # look up the actual distance using google maps API
+            if dist > 80 and gmapsclient is not None:
+                if _gmap_cache_db is None:
+                    home = str(Path.home())
+                    # Google Maps lookups are non-free, so cache them aggressively
+                    # TODO: Invalidate these somehow after a period?
+                    cacheloc = os.path.join(home, '.cache', 'ingress-fieldmap')
+                    _gmap_cache_db = shelve.open(cacheloc, 'c')
+
+                p1pos = a.node[p1]['pll']
+                p2pos = a.node[p2]['pll']
+                dkey = '%s,%s' % (p1pos, p2pos)
+                rkey = '%s,%s' % (p2pos, p1pos)
+
+                if dkey in _gmap_cache_db:
+                    dist = _gmap_cache_db[dkey]
+                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+                elif rkey in _gmap_cache_db:
+                    dist = _gmap_cache_db[rkey]
+                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+                else:
+                    # Perform the lookup
+                    now = datetime.now()
+                    gdir = gmapsclient.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
+                    dist = gdir[0]['legs'][0]['distance']['value']
+                    _gmap_cache_db[dkey] = dist
+                    logger.debug('%s -( %d )-> %s (Google/%s/lookup)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+            else:
+                logger.debug('%s -( %d )-> %s (Direct)', a.node[p1]['name'], dist, a.node[p2]['name'])
+
+            matrow.append(dist)
+
+        _dist_matrix.append(matrow)
+
+
+def getPortalDistance(p1, p2):
+    return _dist_matrix[p1][p2]
 
 
 def populateGraph(portals):
@@ -142,33 +155,54 @@ def makeWorkPlan(a, ab=None):
             a.node[num]['blocker'] = True
             all_p.append(num)
 
-    # Starting with the first portal in the linkplan, make a chain
-    # of closest portals not yet visited for the capture/keyhack plan
     startp = linkplan[0][0]
-    all_p.remove(startp)
-
     if startp not in _capture_cache:
-        dist_ordered = [startp]
-        while True:
-            if not len(all_p):
-                break
-            shortest_hop = None
-            next_node = None
-            for x in all_p:
-                # calculate distance from current portal to next portal
-                dist = getPortalDistance(a, dist_ordered[-1], x)
-                if shortest_hop is None or dist < shortest_hop:
-                    shortest_hop = dist
-                    next_node = x
+        # Using basic ortools per example -- there's probably a better
+        # strategy than loop from the start portal, but let's try this
+        # for now and tweak later
+        routing = pywrapcp.RoutingModel(len(all_p), 1, startp)
 
-            dist_ordered.append(next_node)
-            all_p.remove(next_node)
+        search_parameters = pywrapcp.RoutingModel.DefaultSearchParameters()
+        routing.SetArcCostEvaluatorOfAllVehicles(getPortalDistance)
+        assignment = routing.SolveWithParameters(search_parameters)
+        dist_ordered = list()
+        index = routing.Start(0)
+        while not routing.IsEnd(index):
+            dist_ordered.append(index)
+            index = assignment.Value(routing.NextVar(index))
 
         dist_ordered.pop(0)
-        dist_ordered.reverse()
         _capture_cache[startp] = dist_ordered
     else:
         dist_ordered = _capture_cache[startp]
+
+    # This is the naive "find next closest, which often gives wonky
+    # results. This is the classic "Traveling Salesman Problem" so
+    # there are no perfect solutions. OR-Tools seems to offer better
+    # planning than the naive implementation below.
+
+    # Starting with the first portal in the linkplan, make a chain
+    # of closest portals not yet visited for the capture/keyhack plan
+    #if startp not in _capture_cache:
+    #    dist_ordered = [startp]
+    #    while True:
+    #        if not len(all_p):
+    #            break
+    #        shortest_hop = None
+    #        next_node = None
+    #        for x in all_p:
+    #            # calculate distance from current portal to next portal
+    #            dist = getPortalDistance(dist_ordered[-1], x)
+    #            if shortest_hop is None or dist < shortest_hop:
+    #                shortest_hop = dist
+    #                next_node = x
+    #        dist_ordered.append(next_node)
+    #        all_p.remove(next_node)
+    #    dist_ordered.pop(0)
+    #    dist_ordered.reverse()
+    #    _capture_cache[startp] = dist_ordered
+    #else:
+    #    dist_ordered = _capture_cache[startp]
 
     a.captureplan = dist_ordered
 
@@ -212,7 +246,7 @@ def getWorkplanDist(a, workplan):
         # Are we at a different location than the previous portal?
         if p != prev_p:
             if prev_p is not None:
-                dist = getPortalDistance(a, prev_p, p)
+                dist = getPortalDistance(prev_p, p)
                 if dist > 80:
                     totaldist += dist
             prev_p = p
@@ -250,7 +284,7 @@ def improveEdgeOrder(a):
                         closest_node_pos = j
                         break
 
-                    dist = getPortalDistance(a, linkplan[j][0], prev_origin)
+                    dist = getPortalDistance(linkplan[j][0], prev_origin)
                     if shortest_hop is None or dist <= shortest_hop:
                         shortest_hop = dist
                         closest_node_pos = j
@@ -297,9 +331,9 @@ def improveEdgeOrder(a):
                     reverse_edge = True
                     a.fixes.append('r%d: fixed exact ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
                 else:
-                    dist_to_prev = getPortalDistance(a, prev_origin, p)
-                    dist_to_next = getPortalDistance(a, p, next_origin)
-                    dist_prev_to_next = getPortalDistance(a, prev_origin, next_origin)
+                    dist_to_prev = getPortalDistance(prev_origin, p)
+                    dist_to_next = getPortalDistance(p, next_origin)
+                    dist_prev_to_next = getPortalDistance(prev_origin, next_origin)
                     if next_origin == q and (dist_to_prev+dist_to_next)/2 > dist_prev_to_next:
                         reverse_edge = True
                         a.fixes.append('r%d: fixed inefficient ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
@@ -405,9 +439,8 @@ def triangulate(a, perim):
 
 
 def maxFields(a):
-    # TODO: Move iterations here?
     n = a.order()
-
+    # Generate a distance matrix for all portals
     pts = np.array([a.node[i]['xy'] for i in range(n)])
     perim = np.array(geometry.getPerim(pts))
 

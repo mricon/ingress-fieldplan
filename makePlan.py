@@ -106,6 +106,7 @@ def main():
         logger.critical('Portal limit is %d', _MAX_PORTALS_)
 
     a = maxfield.populateGraph(portals)
+    maxfield.genDistanceMatrix(a)
 
     bestplan = None
     bestgraph = None

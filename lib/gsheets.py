@@ -137,7 +137,7 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                 if fields:
                     logger.info('    total fields: %d', fields)
 
-                dist = maxfield.getPortalDistance(a, prev_p, p)
+                dist = maxfield.getPortalDistance(prev_p, p)
                 if dist > 80:
                     totaldist += dist
                     if dist >= 500:
