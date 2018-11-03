@@ -157,10 +157,16 @@ def makeWorkPlan(a, ab=None):
 
     startp = linkplan[0][0]
     if startp not in _capture_cache:
-        # Using basic ortools per example -- there's probably a better
-        # strategy than loop from the start portal, but let's try this
-        # for now and tweak later
-        routing = pywrapcp.RoutingModel(len(all_p), 1, startp)
+        # Find the portal that's furthest away from the starting portal
+        maxdist = 0
+        endp = startp
+        for i in range(a.order()):
+            dist = getPortalDistance(startp, i)
+            if dist > maxdist:
+                endp = i
+                maxdist = dist
+
+        routing = pywrapcp.RoutingModel(len(all_p), 1, [endp], [startp])
 
         search_parameters = pywrapcp.RoutingModel.DefaultSearchParameters()
         routing.SetArcCostEvaluatorOfAllVehicles(getPortalDistance)
@@ -171,7 +177,7 @@ def makeWorkPlan(a, ab=None):
             dist_ordered.append(index)
             index = assignment.Value(routing.NextVar(index))
 
-        dist_ordered.pop(0)
+        dist_ordered.pop(-1)
         _capture_cache[startp] = dist_ordered
     else:
         dist_ordered = _capture_cache[startp]
