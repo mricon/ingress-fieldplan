@@ -132,7 +132,8 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
         # Are we at a different location than the previous portal?
         if p != prev_p:
             # How many keys do we need if/until we come back?
-            needkeys = 0
+            ensurekeys = 0
+            totalkeys = 0
             # Track when we leave this portal
             lastvisit = True
             same_p = True
@@ -141,14 +142,15 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                     # Are we still at the same portal?
                     if same_p:
                         continue
-                    lastvisit = False
-                    break
+                    if lastvisit:
+                        lastvisit = False
+                        ensurekeys = totalkeys
                 else:
                     # we're at a different portal
                     same_p = False
                 if fq == p:
                     # Future link to this portal
-                    needkeys += 1
+                    totalkeys += 1
 
             mapurl = 'https://www.google.com/maps/dir/?api=1&destination=%s&travelmode=%s' % (
                 a.node[p]['pll'], travelmode
@@ -188,14 +190,19 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                 prev_p = p
                 continue
 
-            if needkeys:
-                planrows.append(('H', 'ensure %d total keys' % needkeys))
-                logger.info('--|H: ensure %d total keys', needkeys)
+            if totalkeys:
+                logger.info('--|H: ensure %d keys (%d max)', ensurekeys, totalkeys)
+                if lastvisit:
+                    planrows.append(('H', 'ensure %d keys' % totalkeys))
+                elif ensurekeys:
+                    planrows.append(('H', 'ensure %d keys (%d max)' % (ensurekeys, totalkeys)))
+                else:
+                    planrows.append(('H', '%d max keys needed' % totalkeys))
 
             if lastvisit:
-                # How many total links to and from this portal?
-                planrows.append(('S', 'protect (%d out, %d in)' % (a.out_degree(p), a.in_degree(p))))
-                logger.info('--|S: %d out, %d in', a.out_degree(p), a.in_degree(p))
+                totallinks = a.out_degree(p) + a.in_degree(p)
+                planrows.append(('S', 'shields on (%d links)' % totallinks))
+                logger.info('--|S: shields on (%d out, %d in)', a.out_degree(p), a.in_degree(p))
 
             prev_p = p
 

@@ -27,19 +27,20 @@ def main():
 
     parser = argparse.ArgumentParser(description=description, prog='makePlan.py',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-s', '--sheetid', default=None, required=True,
-                        help='The Google Spreadsheet ID with portal definitions.')
     parser.add_argument('-i', '--iterations', type=int, default=10000,
                         help='Number of iterations to perform. More iterations may improve '
                         'results, but will take longer to process.')
-    parser.add_argument('-k', '--maxkeys', type=int, default='6',
-                        help='Maximum lacking keys per portal')
+    parser.add_argument('-k', '--maxkeys', type=int, default=None,
+                        help='Limit number of keys required per portal '
+                        '(may result in less efficient plans)')
+    parser.add_argument('-m', '--travelmode', default='walking',
+                        help='Travel mode (walking, bicycling, driving, transit).')
+    parser.add_argument('-s', '--sheetid', default=None, required=True,
+                        help='The Google Spreadsheet ID with portal definitions.')
     parser.add_argument('-p', '--plot', default=None,
                         help='Save step-by-step PNGs of the workplan into this directory.')
     parser.add_argument('-g', '--gmapskey', default=None,
                         help='Google Maps API key (for better distances)')
-    parser.add_argument('-m', '--travelmode', default='walking',
-                        help='Travel mode (walking, bicycling, driving, transit).')
     parser.add_argument('-l', '--log', default=None,
                         help='Log file where to log processing info')
     parser.add_argument('-d', '--debug', action='store_true', default=False,
@@ -47,10 +48,6 @@ def main():
     parser.add_argument('-q', '--quiet', action='store_true', default=False,
                         help='Only output errors to the stdout')
     args = parser.parse_args()
-
-    #output_file = args["output_file"]
-    #if output_file[-4:] != '.pkl':
-    #    output_file += ".pkl"
 
     if args.iterations < 0:
         parser.error('Number of extra samples should be positive')
@@ -110,7 +107,11 @@ def main():
 
     counter = 0
 
-    logger.info('Finding the shortest plan with max %s lacking keys', args.maxkeys)
+    if args.maxkeys:
+        logger.info('Finding an efficient plan with max %s keys', args.maxkeys)
+    else:
+        logger.info('Finding an efficient plan')
+
     logger.info('Ctrl-C to exit and use the latest best plan')
 
     failcount = 0
@@ -142,17 +143,18 @@ def main():
             maxfield.improveEdgeOrder(b)
             workplan = maxfield.makeWorkPlan(b, ab)
 
-            # do any of the portals require more than maxkeys
-            sane_key_reqs = True
-            for i in range(len(b.node)):
-                if b.in_degree(i) > args.maxkeys:
-                    sane_key_reqs = False
-                    break
+            if args.maxkeys:
+                # do any of the portals require more than maxkeys
+                sane_key_reqs = True
+                for i in range(len(b.node)):
+                    if b.in_degree(i) > args.maxkeys:
+                        sane_key_reqs = False
+                        break
 
-            if not sane_key_reqs:
-                failcount += 1
-                logger.debug('Too many keys required, ignoring plan')
-                continue
+                if not sane_key_reqs:
+                    failcount += 1
+                    logger.debug('Too many keys required, ignoring plan')
+                    continue
 
             sane_out_links = True
             for i in range(len(b.node)):
