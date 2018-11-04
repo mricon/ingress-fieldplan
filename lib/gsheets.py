@@ -33,11 +33,11 @@ def setup():
 
 def _get_portal_info_from_row(row):
     try:
+        if not len(row) or not len(row[0].strip()):
+            # Row starting with an empty cell ignored
+            return None
         if row[0][0] == '#':
             # Comment ignored
-            return None
-        if not len(row[0][0].strip()):
-            # Row starting with an empty cell ignored
             return None
         if row[1].find('pll=') < 0:
             logger.debug('link=%s', row[1])
@@ -52,6 +52,10 @@ def _get_portal_info_from_row(row):
 
 
 def get_portals_from_sheet(service, spid):
+    # Does the sheet ID contain slashes? If so, it's the full URL.
+    if spid.find('/') > 0:
+        chunks = spid.split('/')
+        spid = chunks[5]
     # We only consider first 50 lines
     srange = 'Portals!A1:B50'
     res = service.spreadsheets().values().get(
@@ -85,6 +89,9 @@ def get_portals_from_sheet(service, spid):
 
 
 def write_workplan(service, spid, a, workplan, travelmode='walking'):
+    if spid.find('/') > 0:
+        chunks = spid.split('/')
+        spid = chunks[5]
     # Use for spreadsheet rows
     planrows = []
     travelmoji = {
