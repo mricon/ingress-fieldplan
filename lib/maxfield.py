@@ -3,10 +3,11 @@
 
 import os
 import shelve
-
-from lib import geometry
 import logging
 import networkx as nx
+import hashlib
+
+from lib import geometry
 
 from datetime import datetime
 
@@ -28,12 +29,17 @@ _capture_cache = dict()
 _dist_matrix = list()
 
 
-def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
-    global _dist_matrix
-
+def getCacheDir():
     home = str(Path.home())
     cachedir = os.path.join(home, '.cache', 'ingress-fieldmap')
     Path(cachedir).mkdir(parents=True, exist_ok=True)
+    return cachedir
+
+
+def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
+    global _dist_matrix
+
+    cachedir = getCacheDir()
     distcachefile = os.path.join(cachedir, 'distcache')
     # Google Maps lookups are non-free, so cache them aggressively
     # TODO: Invalidate these somehow after a period?
@@ -199,34 +205,6 @@ def makeWorkPlan(a, ab=None):
     else:
         dist_ordered = _capture_cache[startp]
 
-    # This is the naive "find next closest, which often gives wonky
-    # results. This is the classic "Traveling Salesman Problem" so
-    # there are no perfect solutions. OR-Tools seems to offer better
-    # planning than the naive implementation below.
-
-    # Starting with the first portal in the linkplan, make a chain
-    # of closest portals not yet visited for the capture/keyhack plan
-    #if startp not in _capture_cache:
-    #    dist_ordered = [startp]
-    #    while True:
-    #        if not len(all_p):
-    #            break
-    #        shortest_hop = None
-    #        next_node = None
-    #        for x in all_p:
-    #            # calculate distance from current portal to next portal
-    #            dist = getPortalDistance(dist_ordered[-1], x)
-    #            if shortest_hop is None or dist < shortest_hop:
-    #                shortest_hop = dist
-    #                next_node = x
-    #        dist_ordered.append(next_node)
-    #        all_p.remove(next_node)
-    #    dist_ordered.pop(0)
-    #    dist_ordered.reverse()
-    #    _capture_cache[startp] = dist_ordered
-    #else:
-    #    dist_ordered = _capture_cache[startp]
-
     a.captureplan = dist_ordered
 
     # Make a unified workplan
@@ -249,14 +227,6 @@ def makeWorkPlan(a, ab=None):
             workplan.append((p, None, False))
 
         p_captured.append(p)
-
-    #p_captured.append(startp)
-
-    #for p, q, f in linkplan:
-    #    # Quick sanity check
-    #    if q not in p_captured:
-    #        logger.critical('Awooga, linking to a non-captured portal: %s->%s', p, q)
-    #        sys.exit(1)
 
     workplan.extend(linkplan)
     return workplan
@@ -382,7 +352,7 @@ def improveEdgeOrder(a):
         a.edges[p, q]['order'] = i
 
 
-def removeSince(a,m,t):
+def removeSince(a, m, t):
     # Remove all but the first m edges from a (and .edge_stck)
     # Remove all but the first t Triangules from a.triangulation
     for i in range(len(a.edgeStack) - m):
@@ -472,4 +442,55 @@ def maxFields(a):
         return False
 
     return True
+
+
+def genCacheKey(a, ab):
+    plls = list()
+    for m in range(a.order()):
+        plls.append(a.node[m]['pll'])
+    if ab is not None:
+        for m in range(ab.order()):
+            if ab.node[m]['pll'] not in plls:
+                plls.append(ab.node[m]['pll'])
+    h = hashlib.sha1()
+    for pll in plls:
+        h.update(pll.encode('utf-8'))
+    return h.hexdigest()
+
+
+def saveCache(a, ab, bestplan, bestdist):
+    # let's cache processing results for the same portals, just so
+    # we can "add more cycles" to existing best plans
+    # We use portal pll coordinates to generate the cache file key
+    # and dump a in there.
+    cachekey = genCacheKey(a, ab)
+    cachedir = getCacheDir()
+    cachefile = os.path.join(cachedir, cachekey)
+    wc = shelve.open(cachefile, 'c')
+    wc['bestplan'] = bestplan
+    wc['bestgraph'] = a
+    wc['dist_matrix'] = _dist_matrix
+    wc['bestdist'] = bestdist
+    logger.info('Saved plan cache in %s', cachefile)
+    wc.close()
+
+
+def loadCache(a, ab):
+    cachekey = genCacheKey(a, ab)
+    cachedir = getCacheDir()
+    cachefile = os.path.join(cachedir, cachekey)
+    bestgraph = None
+    bestplan = None
+    bestdist = np.inf
+    if os.path.isfile(cachefile):
+        global _dist_matrix
+        logger.info('Loading cache data from cache %s', cachefile)
+        wc = shelve.open(cachefile, 'r')
+        _dist_matrix = wc['dist_matrix']
+        bestgraph = wc['bestgraph']
+        bestplan = wc['bestplan']
+        bestdist = wc['bestdist']
+        wc.close()
+    return (bestgraph, bestplan, bestdist)
+
 

@@ -20,9 +20,10 @@ _MAX_PORTALS_ = 25
 
 # noinspection PyUnresolvedReferences
 def main():
-    description = ('Ingress Maxfield - Maximize the number of links '
+    description = ('Ingress FieldPlan - Maximize the number of links '
                    'and fields, and thus AP, for a collection of '
-                   'portals in the game Ingress.')
+                   'portals in the game Ingress and create a convenient plan '
+                   'in Google Spreadsheets. Spin-off from Maxfield.')
 
     parser = argparse.ArgumentParser(description=description, prog='makePlan.py',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -33,9 +34,6 @@ def main():
                         'results, but will take longer to process.')
     parser.add_argument('-k', '--maxkeys', type=int, default='6',
                         help='Maximum lacking keys per portal')
-    #parser.add_argument('-f','--output_file',default='plan.pkl',
-    #                    help="Filename for pickle object. Default: "
-    #                    "plan.pkl")
     parser.add_argument('-p', '--plot', default=None,
                         help='Save step-by-step PNGs of the workplan into this directory.')
     parser.add_argument('-g', '--gmapskey', default=None,
@@ -96,25 +94,33 @@ def main():
         logger.critical('Portal limit is %d', _MAX_PORTALS_)
 
     a = maxfield.populateGraph(portals)
+
     ab = None
     if blockers:
         ab = maxfield.populateGraph(blockers)
 
-    # Use a copy, because we concat ab to a for blockers distances
-    maxfield.genDistanceMatrix(a.copy(), ab, args.gmapskey, args.travelmode)
+    (bestgraph, bestplan, bestdist) = maxfield.loadCache(a, ab)
+    if bestgraph is None:
+        # Use a copy, because we concat ab to a for blockers distances
+        maxfield.genDistanceMatrix(a.copy(), ab, args.gmapskey, args.travelmode)
+        bestkm = None
+    else:
+        bestkm = bestdist/float(1000)
+        logger.info('Best distance of the plan loaded from cache: %0.2f km', bestkm)
 
-    bestplan = None
-    bestgraph = None
-    bestdist = np.inf
-    bestkm = None
     counter = 0
 
-
     logger.info('Finding the shortest plan with max %s lacking keys', args.maxkeys)
-    logger.info('Ctrl-C to exit early')
+    logger.info('Ctrl-C to exit and use the latest best plan')
+
+    failcount = 0
 
     try:
         while counter < args.iterations:
+            if failcount >= 25:
+                logger.critical('Too many consecutive failures, quitting.')
+                sys.exit(1)
+
             b = a.copy()
             counter += 1
 
@@ -124,8 +130,10 @@ def main():
                         bestkm, counter, args.iterations))
                     sys.stdout.flush()
 
+            failcount += 1
             if not maxfield.maxFields(b):
                 logger.debug('Could not find a triangulation')
+                failcount += 1
                 continue
 
             for t in b.triangulation:
@@ -141,6 +149,7 @@ def main():
                     break
 
             if not sane_key_reqs:
+                failcount += 1
                 logger.debug('Too many keys required, ignoring plan')
                 continue
 
@@ -151,8 +160,11 @@ def main():
                     break
 
             if not sane_out_links:
+                failcount += 1
                 logger.debug('Too many outgoing links, ignoring plan')
                 continue
+
+            failcount = 0
 
             workplan = maxfield.makeWorkPlan(b, ab)
             totaldist = maxfield.getWorkplanDist(b, workplan)
@@ -165,9 +177,9 @@ def main():
                 bestkm = bestdist/float(1000)
 
     except KeyboardInterrupt:
-        print()
-        print('Exiting loop')
-        pass
+        if not args.quiet:
+            print()
+            print('Exiting loop')
 
     if not args.quiet:
         print()
@@ -176,8 +188,11 @@ def main():
         logger.critical('Could not find a solution for this list of portals.')
         sys.exit(1)
 
+    maxfield.saveCache(bestgraph, ab, bestplan, bestdist)
+
     if args.plot:
         animate.make_png_steps(bestgraph, bestplan, args.plot)
+
     gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.travelmode)
 
 if __name__ == "__main__":
