@@ -189,12 +189,12 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
                 continue
 
             if needkeys:
-                planrows.append(('H', '%d total keys' % needkeys))
-                logger.info('--|H: need %d total keys', needkeys)
+                planrows.append(('H', 'ensure %d total keys' % needkeys))
+                logger.info('--|H: ensure %d total keys', needkeys)
 
             if lastvisit:
                 # How many total links to and from this portal?
-                planrows.append(('S', '%d out, %d in' % (a.out_degree(p), a.in_degree(p))))
+                planrows.append(('S', 'protect (%d out, %d in)' % (a.out_degree(p), a.in_degree(p))))
                 logger.info('--|S: %d out, %d in', a.out_degree(p), a.in_degree(p))
 
             prev_p = p
