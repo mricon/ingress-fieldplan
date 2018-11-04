@@ -229,6 +229,7 @@ def makeWorkPlan(a, ab=None):
         p_captured.append(p)
 
     workplan.extend(linkplan)
+    workplan = fixPingPong(a, workplan)
     return workplan
 
 
@@ -246,6 +247,60 @@ def getWorkplanDist(a, workplan):
     return totaldist
 
 
+def fixPingPong(a, workplan):
+    # avoid this stupid single-portal pingpong:
+    #   portal_a -> foo
+    #   portal_b -> portal_a (or much closer than portal_b)
+    #   portal_a -> bar
+    # This should be optimized into:
+    #   portal_a -> foo
+    #   portal_a -> portal_b
+    #   portal_a -> bar
+    rcount = 0
+    while True:
+        improved = False
+        rcount += 1
+
+        for i in range(1, len(workplan)-1):
+            p, q, f = workplan[i]
+            if q is None:
+                continue
+
+            prev_origin = workplan[i-1][0]
+            if prev_origin != p:
+                # we moved to a new origin
+                # skip if next step makes no links
+                if workplan[i+1][1] is None:
+                    continue
+
+                next_origin = workplan[i+1][0]
+                reverse_edge = False
+                if prev_origin == q and next_origin == prev_origin:
+                    reverse_edge = True
+                    a.fixes.append('r%d: fixed exact ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
+                else:
+                    dist_to_prev = getPortalDistance(prev_origin, p)
+                    dist_to_next = getPortalDistance(p, next_origin)
+                    dist_prev_to_next = getPortalDistance(prev_origin, next_origin)
+                    if next_origin == q and (dist_to_prev+dist_to_next)/2 > dist_prev_to_next:
+                        reverse_edge = True
+                        a.fixes.append('r%d: fixed inefficient ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
+
+                if reverse_edge:
+                    improved = True
+                    # reverse this link
+                    attrs = a.edges[p, q]
+                    a.add_edge(q, p, **attrs)
+                    a.remove_edge(p, q)
+                    workplan[i] = (q, p, f)
+
+        if not improved:
+            logger.debug('No further pingpong improvements found.')
+            break
+
+    return workplan
+
+
 def improveEdgeOrder(a):
     m = a.size()
     linkplan = [-1] * m
@@ -255,7 +310,6 @@ def improveEdgeOrder(a):
     # Stick original plan into a for debug purposes
     a.orig_linkplan = list(linkplan)
     a.fixes = list()
-    rcount = 0
 
     prev_origin = None
     prev_origin_created_fields = False
@@ -285,9 +339,9 @@ def improveEdgeOrder(a):
                 if closest_node_pos < 0:
                     closest_node_pos = 0
 
-                a.fixes.append('r%d: moved above %s:' % (rcount, linkplan[closest_node_pos]))
+                a.fixes.append('moved above %s:' % str(linkplan[closest_node_pos]))
                 for row in linkplan[z:i]:
-                    a.fixes.append('r%d:     %s' % (rcount, str(row)))
+                    a.fixes.append('     %s' % str(row))
                 linkplan = (linkplan[:closest_node_pos] +
                             linkplan[z:i] +
                             linkplan[closest_node_pos:z] +
@@ -301,50 +355,8 @@ def improveEdgeOrder(a):
         if f:
             prev_origin_created_fields = True
 
-    # avoid this stupid single-portal pingpong:
-    #   portal_a -> foo
-    #   portal_b -> portal_a (or much closer than portal_b)
-    #   portal_a -> bar
-    # This should be optimized into:
-    #   portal_a -> foo
-    #   portal_a -> portal_b
-    #   portal_a -> bar
-    while True:
-        improved = False
-        rcount += 1
-
-        for i in range(1, m-1):
-            p, q, f = linkplan[i]
-            prev_origin = linkplan[i-1][0]
-            if prev_origin != p:
-                # we moved to a new origin
-                next_origin = linkplan[i+1][0]
-                reverse_edge = False
-                if prev_origin == q and next_origin == prev_origin:
-                    reverse_edge = True
-                    a.fixes.append('r%d: fixed exact ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
-                else:
-                    dist_to_prev = getPortalDistance(prev_origin, p)
-                    dist_to_next = getPortalDistance(p, next_origin)
-                    dist_prev_to_next = getPortalDistance(prev_origin, next_origin)
-                    if next_origin == q and (dist_to_prev+dist_to_next)/2 > dist_prev_to_next:
-                        reverse_edge = True
-                        a.fixes.append('r%d: fixed inefficient ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
-
-                if reverse_edge:
-                    improved = True
-                    # reverse this link
-                    attrs = a.edges[p, q]
-                    a.add_edge(q, p, **attrs)
-                    a.remove_edge(p, q)
-                    linkplan[i] = (q, p, f)
-
-        if not improved:
-            logger.debug('No further pingpong improvements found.')
-            break
-
-    # Stick linkplan into a for debug purposes
-    a.linkplan = list(linkplan)
+    # Stick linkplan into a for debugging purposes
+    a.linkplan = linkplan
 
     # Record the new order of edges
     for i in range(m):
@@ -465,7 +477,9 @@ def saveCache(a, ab, bestplan, bestdist):
     # and dump a in there.
     cachekey = genCacheKey(a, ab)
     cachedir = getCacheDir()
-    cachefile = os.path.join(cachedir, cachekey)
+    plancachedir = os.path.join(cachedir, 'plans')
+    Path(plancachedir).mkdir(parents=True, exist_ok=True)
+    cachefile = os.path.join(plancachedir, cachekey)
     wc = shelve.open(cachefile, 'c')
     wc['bestplan'] = bestplan
     wc['bestgraph'] = a
@@ -478,7 +492,8 @@ def saveCache(a, ab, bestplan, bestdist):
 def loadCache(a, ab):
     cachekey = genCacheKey(a, ab)
     cachedir = getCacheDir()
-    cachefile = os.path.join(cachedir, cachekey)
+    plancachedir = os.path.join(cachedir, 'plans')
+    cachefile = os.path.join(plancachedir, cachekey)
     bestgraph = None
     bestplan = None
     bestdist = np.inf

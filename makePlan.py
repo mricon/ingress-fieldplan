@@ -117,9 +117,9 @@ def main():
 
     try:
         while counter < args.iterations:
-            if failcount >= 25:
-                logger.critical('Too many consecutive failures, quitting.')
-                sys.exit(1)
+            if failcount >= 100:
+                logger.info('Too many consecutive failures, exiting early.')
+                break
 
             b = a.copy()
             counter += 1
@@ -140,6 +140,7 @@ def main():
                 t.markEdgesWithFields()
 
             maxfield.improveEdgeOrder(b)
+            workplan = maxfield.makeWorkPlan(b, ab)
 
             # do any of the portals require more than maxkeys
             sane_key_reqs = True
@@ -166,7 +167,6 @@ def main():
 
             failcount = 0
 
-            workplan = maxfield.makeWorkPlan(b, ab)
             totaldist = maxfield.getWorkplanDist(b, workplan)
 
             if totaldist < bestdist:
