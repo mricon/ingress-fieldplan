@@ -157,7 +157,7 @@ def makeWorkPlan(a, ab=None):
     linkplan = [None] * a.size()
 
     for p, q in a.edges():
-        linkplan[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']) > 0)
+        linkplan[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']))
 
     # Add blockers we need to destroy
     all_p = list(range(a.order()))
@@ -216,15 +216,15 @@ def makeWorkPlan(a, ab=None):
         # links in the linkplan to this position
         links_moved = False
         for cp in p_captured:
-            if (p, cp, False) in linkplan:
+            if (p, cp, 0) in linkplan:
                 # Yes, found a link we can make early
-                a.fixes.append('rpost: moved (%s, %s, False) into capture plan' % (p, cp))
-                workplan.append((p, cp, False))
-                linkplan.remove((p, cp, False))
+                a.fixes.append('rpost: moved (%s, %s, 0) into capture plan' % (p, cp))
+                workplan.append((p, cp, 0))
+                linkplan.remove((p, cp, 0))
                 links_moved = True
         if not links_moved:
             # Just capturing, then
-            workplan.append((p, None, False))
+            workplan.append((p, None, 0))
 
         p_captured.append(p)
 
@@ -306,7 +306,7 @@ def improveEdgeOrder(a):
     linkplan = [-1] * m
 
     for p, q in a.edges():
-        linkplan[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']) > 0)
+        linkplan[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']))
     # Stick original plan into a for debug purposes
     a.orig_linkplan = list(linkplan)
     a.fixes = list()

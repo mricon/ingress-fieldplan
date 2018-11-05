@@ -14,6 +14,10 @@ from pathlib import Path
 import logging
 logger = logging.getLogger('fieldplan')
 
+CAPTUREAP = 500+(125*8)+250+(125*2)
+LINKAP = 313
+FIELDAP = 1250
+
 
 def setup():
     home = str(Path.home())
@@ -126,6 +130,8 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
     totaldist = 0
     links = 0
     fields = 0
+    totalap = CAPTUREAP * a.order()
+
     for p, q, f in workplan:
         plan_at += 1
 
@@ -208,10 +214,12 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
 
         if q is not None:
             # Add links/fields
-            action = 'L'
             links += 1
+            totalap += LINKAP
+            action = 'L'
             if f:
-                fields += 1
+                fields += f
+                totalap += FIELDAP*f
                 action = 'F'
 
             planrows.append((action, u'▶%s' % a.node[q]['name']))
@@ -224,7 +232,8 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
 
     totalkm = totaldist/float(1000)
     logger.info('Total workplan distance: %0.2f km', totalkm)
-    title = 'Ingress: around %s (%0.2f km)' % (a.node[0]['name'], totalkm)
+    logger.info('Total AP: %s (%s without capturing)', totalap, totalap - (a.order()*CAPTUREAP))
+    title = 'Ingress: around %s (%s AP)' % (a.node[0]['name'], '{:,}'.format(totalap))
     logger.info('Setting spreadsheet title: %s', title)
 
     requests = list()
@@ -237,11 +246,12 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
         }
     })
 
-    logger.info('Adding "Workplan" sheet with %d rows', len(workplan))
+    stitle = '%s (%0.2f km)' % (travelmode.capitalize(), totalkm)
+    logger.info('Adding "%s" sheet with %d rows', stitle, len(workplan))
     requests.append({
         'addSheet': {
             'properties': {
-                'title': 'Workplan',
+                'title': stitle,
             }
         }
     })
@@ -259,7 +269,7 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
     updates = list()
 
     updates.append({
-        'range': 'Workplan!A1:B%d' % len(planrows),
+        'range': '%s!A1:B%d' % (stitle, len(planrows)),
         'majorDimension': 'ROWS',
         'values': planrows,
     })
