@@ -2,12 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import sys
-import os
 import argparse
-import networkx as nx
-import numpy as np
 
-from lib import gsheets, geometry, maxfield, animate
+from lib import gsheets, maxfield, animate
 
 import logging
 logger = logging.getLogger('fieldplan')
@@ -37,22 +34,27 @@ def main():
                         help='Travel mode (walking, bicycling, driving, transit).')
     parser.add_argument('-s', '--sheetid', default=None, required=True,
                         help='The Google Spreadsheet ID with portal definitions.')
+    parser.add_argument('-n', '--nosave', action='store_true', default=False,
+                        help='Do not attempt to save the spreadsheet, just calculate the plan.')
     parser.add_argument('-p', '--plots', default=None,
                         help='Save step-by-step PNGs of the workplan into this directory.')
     parser.add_argument('-g', '--gmapskey', default=None,
                         help='Google Maps API key (for better distances)')
+    parser.add_argument('-f', '--faction', default='enl',
+                        help='Set to "res" to use resistance colours')
     parser.add_argument('-l', '--log', default=None,
                         help='Log file where to log processing info')
     parser.add_argument('-d', '--debug', action='store_true', default=False,
                         help='Add debug information to the logfile')
     parser.add_argument('-q', '--quiet', action='store_true', default=False,
                         help='Only output errors to the stdout')
-    parser.add_argument('-n', '--nosave', action='store_true', default=False,
-                        help='Do not attempt to save the spreadsheet, just calculate the plan.')
     args = parser.parse_args()
 
     if args.iterations < 0:
         parser.error('Number of extra samples should be positive')
+
+    if args.faction not in ('enl', 'res'):
+        parser.error('Sorry, I do not know about faction "%s".' % args.faction)
 
     logger.setLevel(logging.DEBUG)
 
@@ -195,9 +197,10 @@ def main():
     maxfield.saveCache(bestgraph, ab, bestplan, bestdist)
 
     if args.plots:
-        animate.make_png_steps(bestgraph, bestplan, args.plots)
+        animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction)
 
-    gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.travelmode, args.nosave)
+    gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.faction, args.travelmode, args.nosave)
+
 
 if __name__ == "__main__":
     main()

@@ -2,20 +2,19 @@
 # -*- coding: utf-8 -*-
 
 import matplotlib.pyplot as plt
-import matplotlib.animation as anim
 import numpy as np
 import os
-
-from matplotlib.patches import Polygon
-
 import logging
-logger = logging.getLogger('fieldplan')
 
 from lib import maxfield
+from matplotlib.patches import Polygon
+
+logger = logging.getLogger('fieldplan')
+
 
 def shrink(a):
-    centroid = a.mean(1).reshape([2,1])
-    return  centroid + .9*(a-centroid)
+    centroid = a.mean(1).reshape([2, 1])
+    return centroid + 0.9 * (a-centroid)
 
 
 def draw_edge(a, s, t, fig, marker, directional=False):
@@ -36,15 +35,15 @@ def draw_edge(a, s, t, fig, marker, directional=False):
     return eart
 
 
-def make_png_steps(a, workplan, outdir):
+def make_png_steps(a, workplan, outdir, faction):
     logger.info('Generating step-by-step pngs of the workplan')
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
 
-    GREEN     = ( 0.0 , 1.0 , 0.0 , 0.3)
-    BLUE      = ( 0.0 , 0.0 , 1.0 , 0.3)
-    RED       = ( 1.0 , 0.0 , 0.0 , 0.5)
-    INVISIBLE = ( 0.0 , 0.0 , 0.0 , 0.0 )
+    c_grn = (0.0, 1.0, 0.0, 0.3)
+    c_blu = (0.0, 0.0, 1.0, 0.3)
+    c_red = (1.0, 0.0, 0.0, 0.5)
+    c_inv = (0.0, 0.0, 0.0, 0.0)
 
     portals = np.array([a.node[i]['xy'] for i in a.nodes()]).T
 
@@ -60,14 +59,17 @@ def make_png_steps(a, workplan, outdir):
     fig.savefig(filen)
     frames.append(filen)
 
-    prev_p = None
+    p = prev_p = None
     seen_p = list()
     for p, q, f in workplan:
         if p != prev_p:
             torm = list()
-            # Colour this node green
+            # Colour this node captured
             p_coords = np.array(a.node[p]['xy']).T
-            ax.plot(p_coords[0], p_coords[1], 'go')
+            if faction == 'res':
+                ax.plot(p_coords[0], p_coords[1], 'bo')
+            else:
+                ax.plot(p_coords[0], p_coords[1], 'go')
             if prev_p is not None:
                 # Show travel edge
                 dist = maxfield.getPortalDistance(prev_p, p)
@@ -108,13 +110,13 @@ def make_png_steps(a, workplan, outdir):
         # Draw the link edge
         torm = draw_edge(a, p, q, ax, 'k-', directional=True)
 
+        fields = list()
         if f:
             # We'll display the new fields in red
-            fields = list()
             for tri in a.edges[p, q]['fields']:
                 coords = np.array([a.node[v]['xy'] for v in tri])
-                fields.append(Polygon(shrink(coords.T).T, facecolor=RED,
-                                      edgecolor=INVISIBLE))
+                fields.append(Polygon(shrink(coords.T).T, facecolor=c_red,
+                                      edgecolor=c_inv))
 
             for field in fields:
                 torm.append(ax.add_patch(field))
@@ -127,11 +129,18 @@ def make_png_steps(a, workplan, outdir):
         for art in torm:
             art.remove()
         # redraw the new edges and fields in the final colour
-        draw_edge(a, p, q, ax, 'g-')
+        if faction == 'res':
+            draw_edge(a, p, q, ax, 'b-')
+        else:
+            draw_edge(a, p, q, ax, 'g-')
+
         if f:
-            # reset fields to green
+            # reset fields to faction color
             for field in fields:
-                field.set_facecolor(GREEN)
+                if faction == 'res':
+                    field.set_facecolor(c_blu)
+                else:
+                    field.set_facecolor(c_grn)
                 ax.add_patch(field)
 
     # Save final frame with all completed fields
@@ -141,4 +150,3 @@ def make_png_steps(a, workplan, outdir):
     frames.append(filen)
 
     logger.info('Saved step-by-step pngs into %s', outdir)
-

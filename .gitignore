@@ -1,9 +1,7 @@
 *~
-include/
+venv/
 tmp_*
-*.php
 *.pyc
-courtsquare/
 .idea
 *.swp
 credentials.json

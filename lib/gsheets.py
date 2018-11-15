@@ -92,7 +92,7 @@ def get_portals_from_sheet(service, spid):
     return portals, blockers
 
 
-def write_workplan(service, spid, a, workplan, travelmode='walking', nosave=False):
+def write_workplan(service, spid, a, workplan, faction, travelmode='walking', nosave=False):
     if spid.find('/') > 0:
         chunks = spid.split('/')
         spid = chunks[5]
@@ -288,15 +288,24 @@ def write_workplan(service, spid, a, workplan, travelmode='walking', nosave=Fals
     logger.info('Resizing columns and adding colours')
     # now auto-resize all columns
     requests = []
-    colors = (
+    colors = [
         ('H', 1.0, 0.6, 0.4),  # Hack
-        ('S', 0.6, 0.8, 1.0),  # Shield
-        ('L', 0.8, 1.0, 0.8),  # Link
-        ('F', 0.5, 1.0, 0.5),  # Field
+        ('S', 0.9, 0.7, 0.9),  # Shield
         ('T', 0.9, 0.9, 0.9),  # Travel
         ('P', 0.6, 0.6, 0.6),  # Portal
         ('X', 1.0, 0.6, 0.6),  # Blocker
-    )
+    ]
+    if faction == 'res':
+        colors += [
+            ('L', 0.6, 0.8, 1.0),  # Link
+            ('F', 0.3, 0.5, 1.0),  # Field
+        ]
+    else:
+        colors += [
+            ('L', 0.8, 1.0, 0.8),  # Link
+            ('F', 0.5, 1.0, 0.5),  # Field
+        ]
+
     for sid in sheet_ids:
         requests.append({
             'autoResizeDimensions': {
