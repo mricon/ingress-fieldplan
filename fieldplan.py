@@ -37,7 +37,7 @@ def main():
                         help='Travel mode (walking, bicycling, driving, transit).')
     parser.add_argument('-s', '--sheetid', default=None, required=True,
                         help='The Google Spreadsheet ID with portal definitions.')
-    parser.add_argument('-p', '--plot', default=None,
+    parser.add_argument('-p', '--plots', default=None,
                         help='Save step-by-step PNGs of the workplan into this directory.')
     parser.add_argument('-g', '--gmapskey', default=None,
                         help='Google Maps API key (for better distances)')
@@ -47,6 +47,8 @@ def main():
                         help='Add debug information to the logfile')
     parser.add_argument('-q', '--quiet', action='store_true', default=False,
                         help='Only output errors to the stdout')
+    parser.add_argument('-n', '--nosave', action='store_true', default=False,
+                        help='Do not attempt to save the spreadsheet, just calculate the plan.')
     args = parser.parse_args()
 
     if args.iterations < 0:
@@ -192,10 +194,10 @@ def main():
 
     maxfield.saveCache(bestgraph, ab, bestplan, bestdist)
 
-    if args.plot:
-        animate.make_png_steps(bestgraph, bestplan, args.plot)
+    if args.plots:
+        animate.make_png_steps(bestgraph, bestplan, args.plots)
 
-    gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.travelmode)
+    gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.travelmode, args.nosave)
 
 if __name__ == "__main__":
     main()

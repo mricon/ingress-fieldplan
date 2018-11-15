@@ -92,7 +92,7 @@ def get_portals_from_sheet(service, spid):
     return portals, blockers
 
 
-def write_workplan(service, spid, a, workplan, travelmode='walking'):
+def write_workplan(service, spid, a, workplan, travelmode='walking', nosave=False):
     if spid.find('/') > 0:
         chunks = spid.split('/')
         spid = chunks[5]
@@ -233,7 +233,11 @@ def write_workplan(service, spid, a, workplan, travelmode='walking'):
     totalkm = totaldist/float(1000)
     logger.info('Total workplan distance: %0.2f km', totalkm)
     logger.info('Total AP: %s (%s without capturing)', totalap, totalap - (a.order()*CAPTUREAP))
-    title = 'Ingress: around %s (%s AP)' % (a.node[0]['name'], '{:,}'.format(totalap))
+    if nosave:
+        logger.info('Not saving spreadsheet per request.')
+        return
+
+    title = 'Ingress: around %s (%d AP)' % (a.node[0]['name'], '{:,}'.format(totalap))
     logger.info('Setting spreadsheet title: %s', title)
 
     requests = list()
