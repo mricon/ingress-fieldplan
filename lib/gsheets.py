@@ -237,7 +237,7 @@ def write_workplan(service, spid, a, workplan, travelmode='walking', nosave=Fals
         logger.info('Not saving spreadsheet per request.')
         return
 
-    title = 'Ingress: around %s (%d AP)' % (a.node[0]['name'], '{:,}'.format(totalap))
+    title = 'Ingress: around %s (%s AP)' % (a.node[0]['name'], '{:,}'.format(totalap))
     logger.info('Setting spreadsheet title: %s', title)
 
     requests = list()
