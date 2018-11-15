@@ -64,17 +64,17 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
     else:
         logger.info('Generating the distance matrix')
 
-    n = a.order()
-
     if ab is not None:
         num = a.order()
         logger.debug('Adding %s blockers to the matrix', ab.order())
         for i in range(ab.order()):
-            num += 1
             attrs = ab.node[i]
             a.add_node(num, **attrs)
             a.node[num]['blocker'] = True
-            all_p.append(num)
+            num += 1
+
+    n = a.order()
+    logger.debug('n=%s', n)
 
     # We consider any direct distance shorter than 80m as effectively 0,
     # since the agent doesn't need to travel to access both portals.
@@ -116,6 +116,7 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
 
 
 def getPortalDistance(p1, p2):
+    logger.debug('p1=%s, p2=%s', p1, p2)
     return _dist_matrix[p1][p2]
 
 
@@ -165,11 +166,11 @@ def makeWorkPlan(a, ab=None):
         num = a.order()
         logger.debug('Adding %s blockers to the plan', ab.order())
         for i in range(ab.order()):
-            num += 1
             attrs = ab.node[i]
             a.add_node(num, **attrs)
             a.node[num]['blocker'] = True
             all_p.append(num)
+            num += 1
 
     startp = linkplan[0][0]
     if startp not in _capture_cache:
