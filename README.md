@@ -23,7 +23,10 @@ Here are a few examples of annotated spreadsheets generated with fieldplan:
 - [Walking](https://docs.google.com/spreadsheets/d/1TbwOCNpsvA7CjOTPv_98Iirjt_siOoAgoTKa0PTglgU)
 - [Bicycling](https://docs.google.com/spreadsheets/d/1PXawfbKaOVKJ4PUo8qvOGHi6Xw1ldNy-Qsyer6-E1-Y)
 
-Reasons why choosing spreadsheets:
+Open those links on your phone and choose "Use the App" -- then switch to the
+plan tab and zoom in for best readability.
+
+# Why use spreadsheets
 
 1. they are easy to edit to input portals
 2. they come preinstalled on all android phones
