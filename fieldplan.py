@@ -38,6 +38,8 @@ def main():
                         help='Do not attempt to save the spreadsheet, just calculate the plan.')
     parser.add_argument('-p', '--plots', default=None,
                         help='Save step-by-step PNGs of the workplan into this directory.')
+    parser.add_argument('-o', '--outputscale', default=1,
+                        help='Image output scale multiplier for PNG generation.')
     parser.add_argument('-g', '--gmapskey', default=None,
                         help='Google Maps API key (for better distances)')
     parser.add_argument('-f', '--faction', default='enl',
@@ -197,7 +199,7 @@ def main():
     maxfield.saveCache(bestgraph, ab, bestplan, bestdist)
 
     if args.plots:
-        animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction)
+        animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction, args.outputscale)
 
     gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.faction, args.travelmode, args.nosave)
 
