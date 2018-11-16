@@ -16,7 +16,7 @@ The main perk of this implementation is the Google Spreadsheet fielding plan,
 which provides easy-to-follow step-by-step instructions for the agent. This is how
 it looks on a mobile phone:
 
-![Spreadsheet with a plan](https://raw.githubusercontent.com/mricon/ingress-fieldplan/master/screenshots/spreadsheet-view.jpg | width=250)
+<img src="https://raw.githubusercontent.com/mricon/ingress-fieldplan/master/screenshots/spreadsheet-view.jpg" width="250">
 
 Here are a few examples of annotated spreadsheets generated with fieldplan:
 
