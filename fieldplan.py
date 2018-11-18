@@ -40,6 +40,8 @@ def main():
                         help='Make sure the plan starts and ends at the same portal (may be less efficient).')
     parser.add_argument('-p', '--plots', default=None,
                         help='Save step-by-step PNGs of the workplan into this directory.')
+    parser.add_argument('--plotdpi', default=96, type=int,
+                        help='DPI to use for generating plots (try 144 for high-dpi screens)')
     parser.add_argument('-g', '--gmapskey', default=None,
                         help='Google Maps API key (for better distances)')
     parser.add_argument('-f', '--faction', default='enl',
@@ -54,6 +56,9 @@ def main():
 
     if args.iterations < 0:
         parser.error('Number of extra samples should be positive')
+
+    if args.plotdpi < 1:
+        parser.error('%s is not a valid screen dpi' % args.plotdpi)
 
     if args.faction not in ('enl', 'res'):
         parser.error('Sorry, I do not know about faction "%s".' % args.faction)
@@ -199,7 +204,7 @@ def main():
     maxfield.saveCache(bestgraph, ab, bestplan, bestdist)
 
     if args.plots:
-        animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction)
+        animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction, args.plotdpi)
 
     gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.faction, args.travelmode, args.nosave)
 

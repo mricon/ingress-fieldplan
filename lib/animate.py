@@ -35,7 +35,7 @@ def draw_edge(a, s, t, fig, marker, directional=False):
     return eart
 
 
-def make_png_steps(a, workplan, outdir, faction):
+def make_png_steps(a, workplan, outdir, faction, plotdpi=96):
     logger.info('Generating step-by-step pngs of the workplan')
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
@@ -47,7 +47,7 @@ def make_png_steps(a, workplan, outdir, faction):
 
     portals = np.array([a.node[i]['xy'] for i in a.nodes()]).T
 
-    fig = plt.figure(figsize=(11, 8), dpi=80)
+    fig = plt.figure(figsize=(11, 8), dpi=plotdpi)
     frames = list()
     ax = fig.add_subplot(1, 1, 1)
     ax.axis('off')
