@@ -151,7 +151,7 @@ def populateGraph(portals):
     return a
 
 
-def makeWorkPlan(a, ab=None):
+def makeWorkPlan(a, ab=None, roundtrip=False):
     global _capture_cache
 
     # make a linkplan first
@@ -172,16 +172,19 @@ def makeWorkPlan(a, ab=None):
             all_p.append(num)
             num += 1
 
+    linkplan = fixPingPong(a, linkplan)
     startp = linkplan[0][0]
-    if startp not in _capture_cache:
-        # Find the portal that's furthest away from the starting portal
-        maxdist = 0
-        endp = startp
-        for i in all_p:
-            dist = getPortalDistance(startp, i)
-            if dist > maxdist:
-                endp = i
-                maxdist = dist
+    endp = linkplan[-1][0]
+    if (startp, endp) not in _capture_cache:
+        if not roundtrip:
+            # Find the portal that's furthest away from the starting portal
+            maxdist = getPortalDistance(startp, endp)
+            for i in all_p:
+                dist = getPortalDistance(startp, i)
+                if dist > maxdist:
+                    endp = i
+                    maxdist = dist
+        logger.debug('Furthest from %s is %s', a.node[startp]['name'], a.node[endp]['name'])
 
         routing = pywrapcp.RoutingModel(len(all_p), 1, [endp], [startp])
 
@@ -202,9 +205,9 @@ def makeWorkPlan(a, ab=None):
         dist_ordered.append(routing.IndexToNode(index))
         dist_ordered.remove(startp)
 
-        _capture_cache[startp] = dist_ordered
+        _capture_cache[(startp, endp)] = dist_ordered
     else:
-        dist_ordered = _capture_cache[startp]
+        dist_ordered = _capture_cache[(startp, endp)]
 
     a.captureplan = dist_ordered
 

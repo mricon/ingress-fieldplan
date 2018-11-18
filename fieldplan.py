@@ -36,6 +36,8 @@ def main():
                         help='The Google Spreadsheet ID with portal definitions.')
     parser.add_argument('-n', '--nosave', action='store_true', default=False,
                         help='Do not attempt to save the spreadsheet, just calculate the plan.')
+    parser.add_argument('-r', '--roundtrip', action='store_true', default=False,
+                        help='Make sure the plan starts and ends at the same portal (may be less efficient).')
     parser.add_argument('-p', '--plots', default=None,
                         help='Save step-by-step PNGs of the workplan into this directory.')
     parser.add_argument('-g', '--gmapskey', default=None,
@@ -145,7 +147,7 @@ def main():
                 t.markEdgesWithFields()
 
             maxfield.improveEdgeOrder(b)
-            workplan = maxfield.makeWorkPlan(b, ab)
+            workplan = maxfield.makeWorkPlan(b, ab, args.roundtrip)
 
             if args.maxkeys:
                 # do any of the portals require more than maxkeys
