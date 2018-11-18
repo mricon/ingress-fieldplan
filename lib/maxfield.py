@@ -498,15 +498,17 @@ def loadCache(a, ab):
     bestgraph = None
     bestplan = None
     bestdist = np.inf
-    if os.path.isfile(cachefile):
+    try:
         global _dist_matrix
-        logger.info('Loading cache data from cache %s', cachefile)
         wc = shelve.open(cachefile, 'r')
+        logger.info('Loading cache data from cache %s', cachefile)
         _dist_matrix = wc['dist_matrix']
         bestgraph = wc['bestgraph']
         bestplan = wc['bestplan']
         bestdist = wc['bestdist']
         wc.close()
+    except:
+        pass
     return (bestgraph, bestplan, bestdist)
 
 
