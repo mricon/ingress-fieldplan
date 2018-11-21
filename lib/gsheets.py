@@ -92,7 +92,8 @@ def get_portals_from_sheet(service, spid):
     return portals, blockers
 
 
-def write_workplan(service, spid, a, workplan, faction, travelmode='walking', nosave=False):
+def write_workplan(service, spid, a, workplan, faction, travelmode='walking', nosave=False, roundtrip=False):
+
     if spid.find('/') > 0:
         chunks = spid.split('/')
         spid = chunks[5]
@@ -251,7 +252,10 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
         }
     })
 
-    stitle = '%s (%0.2f km)' % (travelmode.capitalize(), totalkm)
+    dtitle = 'From %s, %s' % (a.node[workplan[0][0]]['name'], travelmode)
+    if roundtrip:
+        dtitle += ', roundtrip'
+    stitle = '%s (%0.2f km)' % (dtitle, totalkm)
     logger.info('Adding "%s" sheet with %d rows', stitle, len(workplan))
     requests.append({
         'addSheet': {

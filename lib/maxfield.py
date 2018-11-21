@@ -151,7 +151,7 @@ def populateGraph(portals):
     return a
 
 
-def makeWorkPlan(a, ab=None, roundtrip=False):
+def makeWorkPlan(a, ab=None, roundtrip=False, beginfirst=False):
     global _capture_cache
 
     # make a linkplan first
@@ -172,16 +172,23 @@ def makeWorkPlan(a, ab=None, roundtrip=False):
             all_p.append(num)
             num += 1
 
-    linkplan = fixPingPong(a, linkplan)
+    logger.debug('roundtrip=%s', roundtrip)
+    logger.debug('beginfirst=%s', beginfirst)
+
     startp = linkplan[0][0]
-    endp = linkplan[-1][0]
-    if roundtrip:
+    if beginfirst:
+        endp = 0
+        cachekey = startp
+    elif roundtrip:
+        linkplan = fixPingPong(a, linkplan)
+        endp = linkplan[-1][0]
         cachekey = (startp, endp)
     else:
         cachekey = startp
+        endp = startp
 
     if cachekey not in _capture_cache:
-        if not roundtrip:
+        if not (roundtrip or beginfirst):
             # Find the portal that's furthest away from the starting portal
             maxdist = getPortalDistance(startp, endp)
             for i in all_p:
@@ -193,8 +200,6 @@ def makeWorkPlan(a, ab=None, roundtrip=False):
                     maxdist = dist
 
             logger.debug('Furthest from %s is %s', a.node[startp]['name'], a.node[endp]['name'])
-        else:
-            logger.debug('Making a roundtrip plan.')
 
         routing = pywrapcp.RoutingModel(len(all_p), 1, [endp], [startp])
 
@@ -244,6 +249,10 @@ def makeWorkPlan(a, ab=None, roundtrip=False):
 
     workplan.extend(linkplan)
     workplan = fixPingPong(a, workplan)
+    if beginfirst and roundtrip:
+        if workplan[-1][0] != workplan[0][0]:
+            logger.debug('Appending start portal to the end of plan for beginfirst+roundtrip')
+            workplan.append((workplan[0][0], None, 0))
     return workplan
 
 
@@ -476,7 +485,7 @@ def maxFields(a):
     return True
 
 
-def genCacheKey(a, ab):
+def genCacheKey(a, ab, mode, beginfirst, roundtrip):
     plls = list()
     for m in range(a.order()):
         plls.append(a.node[m]['pll'])
@@ -487,15 +496,23 @@ def genCacheKey(a, ab):
     h = hashlib.sha1()
     for pll in plls:
         h.update(pll.encode('utf-8'))
-    return h.hexdigest()
+    phash = h.hexdigest()
+    cachekey = mode
+    if beginfirst:
+        cachekey += '+beginfirst'
+    if roundtrip:
+        cachekey += '+roundtrip'
+    cachekey += '-%s' % phash
+
+    return cachekey
 
 
-def saveCache(a, ab, bestplan, bestdist):
+def saveCache(a, ab, bestplan, bestdist, mode, beginfirst, roundtrip):
     # let's cache processing results for the same portals, just so
     # we can "add more cycles" to existing best plans
     # We use portal pll coordinates to generate the cache file key
     # and dump a in there.
-    cachekey = genCacheKey(a, ab)
+    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip)
     cachedir = getCacheDir()
     plancachedir = os.path.join(cachedir, 'plans')
     Path(plancachedir).mkdir(parents=True, exist_ok=True)
@@ -509,8 +526,8 @@ def saveCache(a, ab, bestplan, bestdist):
     wc.close()
 
 
-def loadCache(a, ab):
-    cachekey = genCacheKey(a, ab)
+def loadCache(a, ab, mode, beginfirst, roundtrip):
+    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip)
     cachedir = getCacheDir()
     plancachedir = os.path.join(cachedir, 'plans')
     cachefile = os.path.join(plancachedir, cachekey)

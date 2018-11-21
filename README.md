@@ -193,6 +193,20 @@ Note, that the plan instructions will always tell you how many keys you need
 for the portal before you leave. Often, even if a portal requires 5-6 keys,
 you may not need to get them all at once.
 
+## Round-trip (-r) and Begin-First (-b)
+
+The software will try to find the most efficient capture and field strategy
+but it may not result in the most convenient plan, because you may want to
+start and end at a specific portal -- for example, if you are visiting a
+remote part of town and want your walk to begin near the parking lot/transit
+stop and end there, too.
+
+- -r will create roundtrip plans, using the most efficient starting portal
+- -b will use the first portal in the spreadsheet as the starting portal
+- -r -b will do both of the above, though the last step will usually be only
+    the return trip without any links or fields (but it's useful for total
+    distance calculation)
+
 ## Generating plots
 
 Passing the -p switch will generate a set of step-by-step PNG files that

@@ -29,7 +29,7 @@ def main():
                         'results, but will take longer to process.')
     parser.add_argument('-k', '--maxkeys', type=int, default=None,
                         help='Limit number of keys required per portal '
-                        '(may result in less efficient plans)')
+                        '(may result in less efficient plans).')
     parser.add_argument('-m', '--travelmode', default='walking',
                         help='Travel mode (walking, bicycling, driving, transit).')
     parser.add_argument('-s', '--sheetid', default=None, required=True,
@@ -38,6 +38,8 @@ def main():
                         help='Do not attempt to save the spreadsheet, just calculate the plan.')
     parser.add_argument('-r', '--roundtrip', action='store_true', default=False,
                         help='Make sure the plan starts and ends at the same portal (may be less efficient).')
+    parser.add_argument('-b', '--beginfirst', action='store_true', default=False,
+                        help='Begin capture with the first portal in the spreadsheet (may be less efficient).')
     parser.add_argument('-p', '--plots', default=None,
                         help='Save step-by-step PNGs of the workplan into this directory.')
     parser.add_argument('--plotdpi', default=96, type=int,
@@ -107,7 +109,7 @@ def main():
     if blockers:
         ab = maxfield.populateGraph(blockers)
 
-    (bestgraph, bestplan, bestdist) = maxfield.loadCache(a, ab)
+    (bestgraph, bestplan, bestdist) = maxfield.loadCache(a, ab, args.travelmode, args.beginfirst, args.roundtrip)
     if bestgraph is None:
         # Use a copy, because we concat ab to a for blockers distances
         maxfield.genDistanceMatrix(a.copy(), ab, args.gmapskey, args.travelmode)
@@ -152,7 +154,7 @@ def main():
                 t.markEdgesWithFields()
 
             maxfield.improveEdgeOrder(b)
-            workplan = maxfield.makeWorkPlan(b, ab, args.roundtrip)
+            workplan = maxfield.makeWorkPlan(b, ab, args.roundtrip, args.beginfirst)
 
             if args.maxkeys:
                 # do any of the portals require more than maxkeys
@@ -201,12 +203,13 @@ def main():
         logger.critical('Could not find a solution for this list of portals.')
         sys.exit(1)
 
-    maxfield.saveCache(bestgraph, ab, bestplan, bestdist)
+    maxfield.saveCache(bestgraph, ab, bestplan, bestdist, args.travelmode, args.beginfirst, args.roundtrip)
 
     if args.plots:
         animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction, args.plotdpi)
 
-    gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.faction, args.travelmode, args.nosave)
+    gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.faction, args.travelmode, args.nosave,
+                           args.roundtrip)
 
 
 if __name__ == "__main__":
