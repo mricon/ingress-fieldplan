@@ -274,14 +274,20 @@ def fixPingPong(a, workplan):
     while True:
         improved = False
         rcount += 1
+        seen = [workplan[0][0]]
 
         for i in range(1, len(workplan)-1):
             p, q, f = workplan[i]
-            if q is None:
-                continue
 
             prev_origin = workplan[i-1][0]
             if prev_origin != p:
+                if prev_origin not in seen:
+                    seen.append(prev_origin)
+
+                if p not in seen:
+                    # Don't consider portals we're still capturing
+                    continue
+
                 # we moved to a new origin
                 # skip if next step makes no links
                 if workplan[i+1][1] is None:
