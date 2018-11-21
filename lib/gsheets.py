@@ -245,6 +245,7 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
         'updateSpreadsheetProperties': {
             'properties': {
                 'title': title,
+                'locale': 'en_US',
             },
             'fields': 'title',
         }
