@@ -175,16 +175,26 @@ def makeWorkPlan(a, ab=None, roundtrip=False):
     linkplan = fixPingPong(a, linkplan)
     startp = linkplan[0][0]
     endp = linkplan[-1][0]
-    if (startp, endp) not in _capture_cache:
+    if roundtrip:
+        cachekey = (startp, endp)
+    else:
+        cachekey = startp
+
+    if cachekey not in _capture_cache:
         if not roundtrip:
             # Find the portal that's furthest away from the starting portal
             maxdist = getPortalDistance(startp, endp)
             for i in all_p:
+                if i in (startp, endp):
+                    continue
                 dist = getPortalDistance(startp, i)
                 if dist > maxdist:
                     endp = i
                     maxdist = dist
-        logger.debug('Furthest from %s is %s', a.node[startp]['name'], a.node[endp]['name'])
+
+            logger.debug('Furthest from %s is %s', a.node[startp]['name'], a.node[endp]['name'])
+        else:
+            logger.debug('Making a roundtrip plan.')
 
         routing = pywrapcp.RoutingModel(len(all_p), 1, [endp], [startp])
 
@@ -205,9 +215,9 @@ def makeWorkPlan(a, ab=None, roundtrip=False):
         dist_ordered.append(routing.IndexToNode(index))
         dist_ordered.remove(startp)
 
-        _capture_cache[(startp, endp)] = dist_ordered
+        _capture_cache[cachekey] = dist_ordered
     else:
-        dist_ordered = _capture_cache[(startp, endp)]
+        dist_ordered = _capture_cache[cachekey]
 
     a.captureplan = dist_ordered
 
