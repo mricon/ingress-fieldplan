@@ -239,13 +239,33 @@ def makeWorkPlan(a, ab=None, roundtrip=False, beginfirst=False):
                 # Yes, found a link we can make early
                 a.fixes.append('rpost: moved (%s, %s, 0) into capture plan' % (p, cp))
                 workplan.append((p, cp, 0))
+                p_captured.append(p)
                 linkplan.remove((p, cp, 0))
                 links_moved = True
         if not links_moved:
             # Just capturing, then
-            workplan.append((p, None, 0))
+            # Do we come back to this portal before making any links? If so, we don't
+            # need to capture it separately.
+            req_capture = True
+            for lp, lq, lf in linkplan:
+                # if we see p show up in lp before it shows up in lq,
+                # then it's a useless capture
+                if lq == p:
+                    # We're making a link to it before we visit it, so
+                    # keep it in the capture plan
+                    break
+                if lp == p:
+                    # We're coming back to it before linking to it, so don't
+                    # capture it separately
+                    a.fixes.append('rpost: removed useless capture of %s before (%s, %s, %s)' % (
+                                    a.node[p]['name'], lp, lq, lf))
+                    req_capture = False
+                    break
 
-        p_captured.append(p)
+            if req_capture or (len(workplan) == 0 and beginfirst):
+                # if we forced "beginfirst" then start from that one anyway
+                workplan.append((p, None, 0))
+                p_captured.append(p)
 
     workplan.extend(linkplan)
     workplan = fixPingPong(a, workplan)
