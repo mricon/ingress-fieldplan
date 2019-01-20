@@ -18,6 +18,8 @@ from lib.Triangle import Triangle, Deadend
 from ortools.constraint_solver import pywrapcp
 from ortools.constraint_solver import routing_enums_pb2
 
+from random import shuffle
+
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 
@@ -219,10 +221,30 @@ def makeWorkPlan(a, ab=None, roundtrip=False, beginfirst=False):
 
         dist_ordered.append(routing.IndexToNode(index))
         dist_ordered.remove(startp)
+        a.captureplan_orbot = dist_ordered
+        # Find clusters that are within 80m of each-other
+        # We shuffle them later in hopes that it gives us a more efficient
+        # capture/link sequence.
+        clusters = list()
+        cluster = [dist_ordered[0]]
+        for p in dist_ordered[1:]:
+            if getPortalDistance(cluster[0], p) <= 80:
+                cluster.append(p)
+                continue
+            clusters.append(cluster)
+            cluster = [p]
 
-        _capture_cache[cachekey] = dist_ordered
+        clusters.append(cluster)
+        _capture_cache[cachekey] = clusters
     else:
-        dist_ordered = _capture_cache[cachekey]
+        clusters = _capture_cache[cachekey]
+
+    a.clusters = clusters
+    dist_ordered = list()
+    for cluster in clusters:
+        if len(cluster) > 1:
+            shuffle(cluster)
+        dist_ordered.extend(cluster)
 
     a.captureplan = dist_ordered
 

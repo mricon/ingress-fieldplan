@@ -117,6 +117,9 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
     for line in a.linkplan:
         logger.debug('    %s', line)
     logger.debug('    len: %s', len(a.linkplan))
+    logger.debug('clusters:')
+    for line in a.clusters:
+        logger.debug('    %s', line)
     logger.debug('captureplan:')
     for line in a.captureplan:
         logger.debug('    %s', line)
