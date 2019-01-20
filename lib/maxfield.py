@@ -230,42 +230,61 @@ def makeWorkPlan(a, ab=None, roundtrip=False, beginfirst=False):
     workplan = []
     p_captured = []
     for p in dist_ordered:
-        # Go through those already captured and
-        # see if we can move any non-field-making
-        # links in the linkplan to this position
-        links_moved = False
-        for cp in p_captured:
-            if (p, cp, 0) in linkplan:
-                # Yes, found a link we can make early
-                a.fixes.append('rpost: moved (%s, %s, 0) into capture plan' % (p, cp))
-                workplan.append((p, cp, 0))
-                p_captured.append(p)
-                linkplan.remove((p, cp, 0))
-                links_moved = True
-        if not links_moved:
-            # Just capturing, then
-            # Do we come back to this portal before making any links? If so, we don't
-            # need to capture it separately.
-            req_capture = True
-            for lp, lq, lf in linkplan:
-                # if we see p show up in lp before it shows up in lq,
-                # then it's a useless capture
-                if lq == p:
-                    # We're making a link to it before we visit it, so
-                    # keep it in the capture plan
-                    break
-                if lp == p:
-                    # We're coming back to it before linking to it, so don't
-                    # capture it separately
-                    a.fixes.append('rpost: removed useless capture of %s before (%s, %s, %s)' % (
-                                    a.node[p]['name'], lp, lq, lf))
-                    req_capture = False
-                    break
+        req_capture = True
+        for lp, lq, lf in linkplan:
+            # if we see p show up in lp before it shows up in lq,
+            # then it's a useless capture
+            if lq == p:
+                # We're making a link to it before we visit it, so
+                # keep it in the capture plan
+                break
+            if lp == p:
+                # We're coming back to it before linking to it, so don't
+                # capture it separately
+                a.fixes.append('rpost: removed useless capture of %s before (%s, %s, %s)' % (
+                    a.node[p]['name'], lp, lq, lf))
+                req_capture = False
+                break
 
-            if req_capture or (len(workplan) == 0 and beginfirst):
-                # if we forced "beginfirst" then start from that one anyway
+        if req_capture:
+            # Go through those already captured and
+            # see if we can move any non-field-making
+            # links in the linkplan to this position
+            links_moved = False
+            for cp in p_captured:
+                if (p, cp, 0) not in linkplan:
+                    continue
+                ploc = linkplan.index((p, cp, 0))
+                # don't move if we make any fields during our visit
+                # to that portal, to keep linking operations bunched
+                # up together.
+                fields_made = False
+                for nloc in range(ploc+1, len(linkplan)):
+                    if linkplan[nloc][0] != p:
+                        # moved to a different origin
+                        break
+                    if linkplan[nloc][2] > 0:
+                        # making a field, don't move this link
+                        fields_made = True
+                        break
+
+                if not fields_made:
+                    # Yes, found a link we can make early
+                    a.fixes.append('rpost: moved (%s, %s, 0) into capture plan' % (p, cp))
+                    workplan.append((p, cp, 0))
+                    linkplan.remove((p, cp, 0))
+                    links_moved = True
+
+            if not links_moved:
+                # Just capturing, then
                 workplan.append((p, None, 0))
-                p_captured.append(p)
+
+            p_captured.append(p)
+
+        elif beginfirst and not len(workplan):
+            # Force capture of first portal anyway when beginfirst
+            workplan.append((p, None, 0))
+            p_captured.append(p)
 
     workplan.extend(linkplan)
     workplan = fixPingPong(a, workplan)
@@ -292,13 +311,22 @@ def getWorkplanDist(a, workplan):
 
 def fixPingPong(a, workplan):
     # avoid this stupid single-portal pingpong:
-    #   portal_a -> foo
-    #   portal_b -> portal_a (or much closer than portal_b)
-    #   portal_a -> bar
+    #   at portal_a
+    #   portal_b -> portal_a
+    #   at portal_x
     # This should be optimized into:
-    #   portal_a -> foo
+    #   at portal_a
     #   portal_a -> portal_b
-    #   portal_a -> bar
+    #   at portal_x
+    #
+    # Similarly:
+    #   at portal_x
+    #   portal_a -> portal_b
+    #   at portal_b
+    # should become:
+    #   at portal_x
+    #   portal_b -> portal_a
+    #   at portal_b
     rcount = 0
     while True:
         improved = False
@@ -324,16 +352,22 @@ def fixPingPong(a, workplan):
 
                 next_origin = workplan[i+1][0]
                 reverse_edge = False
-                if prev_origin == q and next_origin == prev_origin:
+                if (next_origin == q or prev_origin == q) and a.out_degree(q) < 8:
                     reverse_edge = True
-                    a.fixes.append('r%d: fixed exact ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
-                else:
-                    dist_to_prev = getPortalDistance(prev_origin, p)
-                    dist_to_next = getPortalDistance(p, next_origin)
-                    dist_prev_to_next = getPortalDistance(prev_origin, next_origin)
-                    if next_origin == q and (dist_to_prev+dist_to_next)/2 > dist_prev_to_next:
-                        reverse_edge = True
-                        a.fixes.append('r%d: fixed inefficient ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
+                    a.fixes.append('r%d: fixed ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
+
+                # if prev_origin == q and next_origin == prev_origin:
+                #     reverse_edge = True
+                #     a.fixes.append('r%d: fixed exact ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
+                # Turn off distance-based pingpong fixes for now
+                # we are already catching them by the blunt logic above
+                # else:
+                #    dist_to_prev = getPortalDistance(prev_origin, p)
+                #    dist_to_next = getPortalDistance(p, next_origin)
+                #    dist_prev_to_next = getPortalDistance(prev_origin, next_origin)
+                #    if next_origin == q and (dist_to_prev+dist_to_next)/2 > dist_prev_to_next:
+                #        reverse_edge = True
+                #        a.fixes.append('r%d: fixed inefficient ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
 
                 if reverse_edge:
                     improved = True
