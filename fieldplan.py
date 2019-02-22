@@ -140,8 +140,8 @@ def main():
 
             if not args.quiet:
                 if bestkm is not None:
-                    sys.stdout.write('\r(%0.2f km best): %s/%s      ' % (
-                        bestkm, counter, args.iterations))
+                    sys.stdout.write('\r(%0.2f km best, %s actions): %s/%s      ' % (
+                        bestkm, len(bestplan), counter, args.iterations))
                     sys.stdout.flush()
 
             failcount += 1
@@ -184,7 +184,8 @@ def main():
 
             totaldist = maxfield.getWorkplanDist(b, workplan)
 
-            if totaldist < bestdist:
+            # We take the shorter plan, or a plan with a similar length that requires fewer actions.
+            if totaldist < bestdist or (len(workplan) < len(bestplan) and totaldist-bestdist <= 80):
                 counter = 0
                 bestplan = workplan
                 bestgraph = b
