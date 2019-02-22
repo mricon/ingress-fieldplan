@@ -128,6 +128,7 @@ def main():
     logger.info('Ctrl-C to exit and use the latest best plan')
 
     failcount = 0
+    seenplans = list()
 
     try:
         while counter < args.iterations:
@@ -184,10 +185,13 @@ def main():
 
             totaldist = maxfield.getWorkplanDist(b, workplan)
 
-            # We take the shorter plan, or a plan with a similar length that requires fewer actions.
-            if totaldist < bestdist or (len(workplan) < len(bestplan) and totaldist-bestdist <= 80):
+            # We take the shorter plan, or a plan with a similar length that requires fewer actions,
+            # and we have not yet considered this plan
+            if ((totaldist < bestdist or (len(workplan) < len(bestplan) and totaldist-bestdist <= 80))
+                    and workplan not in seenplans):
                 counter = 0
                 bestplan = workplan
+                seenplans.append(workplan)
                 bestgraph = b
                 bestdist = totaldist
                 bestkm = bestdist/float(1000)
