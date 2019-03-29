@@ -106,23 +106,27 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
         'driving': u"\U0001F697",
     }
 
+    n = a.order()
+    logger.debug('portals:')
+    for p in range(n):
+        logger.debug('    %d: %s', p, a.node[p]['name'])
     logger.debug('orig_linkplan:')
     for line in a.orig_linkplan:
-        logger.debug('    %s', line)
+        logger.debug('    %s: %s -> %s', line, a.node[line[0]]['name'], a.node[line[1]]['name'])
     logger.debug('    len: %s', len(a.orig_linkplan))
     logger.debug('fixes:')
     for line in a.fixes:
         logger.debug('    %s', line)
     logger.debug('fixed linkplan:')
     for line in a.linkplan:
-        logger.debug('    %s', line)
+        logger.debug('    %s: %s -> %s', line, a.node[line[0]]['name'], a.node[line[1]]['name'])
     logger.debug('    len: %s', len(a.linkplan))
     logger.debug('clusters:')
     for line in a.clusters:
         logger.debug('    %s', line)
     logger.debug('captureplan:')
     for line in a.captureplan:
-        logger.debug('    %s', line)
+        logger.debug('    %s: %s', line, a.node[line]['name'])
     logger.debug('workplan:')
     for line in workplan:
         logger.debug('    %s', line)
@@ -172,7 +176,7 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
                     logger.info('    total fields: %d', fields)
 
                 dist = maxfield.getPortalDistance(prev_p, p)
-                if dist > 80:
+                if dist > 40:
                     totaldist += dist
                     if dist >= 500:
                         nicedist = '%0.1f km' % (dist/float(1000))

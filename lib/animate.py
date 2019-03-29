@@ -80,12 +80,12 @@ def make_png_steps(a, workplan, outdir, faction, plotdpi=96):
                     action = 'Capture'
 
                 if p not in seen_p:
-                    if dist > 80:
+                    if dist > 40:
                         ax.set_title('%s %s (%s m)' % (action, a.node[p]['name'], dist), ha='center')
                     else:
                         ax.set_title('%s %s' % (action, a.node[p]['name']), ha='center')
                 else:
-                    if dist > 80:
+                    if dist > 40:
                         ax.set_title('Travel to %s (%s m)' % (a.node[p]['name'], dist), ha='center')
                     else:
                         ax.set_title('Move to %s' % a.node[p]['name'], ha='center')

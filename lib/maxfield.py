@@ -78,7 +78,7 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
     n = a.order()
     logger.debug('n=%s', n)
 
-    # We consider any direct distance shorter than 80m as effectively 0,
+    # We consider any direct distance shorter than 40m as effectively 0,
     # since the agent doesn't need to travel to access both portals.
     for p1 in range(n):
         matrow = list()
@@ -88,9 +88,9 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
             p2pos = a.node[p2]['geo']
             dist = int(geometry.sphereDist(p1pos, p2pos)[0])
 
-            # If it's over 80 meters and we have a gmaps client key,
+            # If it's over 40 meters and we have a gmaps client key,
             # look up the actual distance using google maps API
-            if dist > 80 and gmaps is not None:
+            if dist > 40 and gmaps is not None:
                 p1pos = a.node[p1]['pll']
                 p2pos = a.node[p2]['pll']
                 dkey = '%s,%s,%s' % (p1pos, p2pos, gmapsmode)
@@ -221,14 +221,13 @@ def makeWorkPlan(a, ab=None, roundtrip=False, beginfirst=False):
 
         dist_ordered.append(routing.IndexToNode(index))
         dist_ordered.remove(startp)
-        a.captureplan_orbot = dist_ordered
-        # Find clusters that are within 80m of each-other
+        # Find clusters that are within 160m of each-other
         # We shuffle them later in hopes that it gives us a more efficient
         # capture/link sequence.
         clusters = list()
         cluster = [dist_ordered[0]]
         for p in dist_ordered[1:]:
-            if getPortalDistance(cluster[0], p) <= 80:
+            if getPortalDistance(cluster[0], p) <= 160:
                 cluster.append(p)
                 continue
             clusters.append(cluster)
@@ -325,7 +324,7 @@ def getWorkplanDist(a, workplan):
         if p != prev_p:
             if prev_p is not None:
                 dist = getPortalDistance(prev_p, p)
-                if dist > 80:
+                if dist > 40:
                     totaldist += dist
             prev_p = p
     return totaldist
