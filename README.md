@@ -206,6 +206,16 @@ stop and end there, too.
 - -r -b will do both of the above, though the last step will usually be only
     the return trip without any links or fields (but it's useful for total
     distance calculation)
+    
+## Highest MU per distance travelled ratio (-u)
+
+By default, fieldplan will try to find the shortest plan, but using the
+-u switch you can tell it to consider field sizes as well, in an attempt to
+find plans that would also give you a high MU capture. This may result in
+less efficient plans, but could be a worthy trade-off if you are covering
+a larger territory (e.g. biking or driving) and want to maximize how many
+MUs you cover. Obviously, the software has no way of knowing the actual MU
+density, so it will simply give higher priority to larger fields.
 
 ## Generating plots
 

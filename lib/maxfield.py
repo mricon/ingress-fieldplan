@@ -29,6 +29,8 @@ logger = logging.getLogger('fieldplan')
 
 _capture_cache = dict()
 _dist_matrix = list()
+_direct_dist_matrix = list()
+_area_cache = dict()
 
 
 def getCacheDir():
@@ -40,6 +42,7 @@ def getCacheDir():
 
 def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
     global _dist_matrix
+    global _direct_dist_matrix
 
     cachedir = getCacheDir()
     distcachefile = os.path.join(cachedir, 'distcache')
@@ -82,11 +85,14 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
     # since the agent doesn't need to travel to access both portals.
     for p1 in range(n):
         matrow = list()
+        direct_matrow = list()
         for p2 in range(n):
             # Do direct distance first
             p1pos = a.node[p1]['geo']
             p2pos = a.node[p2]['geo']
             dist = int(geometry.sphereDist(p1pos, p2pos)[0])
+            direct_matrow.append(dist)
+            logger.debug('%s -( %d )-> %s (Direct)', a.node[p1]['name'], dist, a.node[p2]['name'])
 
             # If it's over 40 meters and we have a gmaps client key,
             # look up the actual distance using google maps API
@@ -98,27 +104,32 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
 
                 if dkey in _gmap_cache_db:
                     dist = _gmap_cache_db[dkey]
-                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'],
+                                 dist, a.node[p2]['name'], gmapsmode)
                 elif rkey in _gmap_cache_db:
                     dist = _gmap_cache_db[rkey]
-                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
+                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'],
+                                 dist, a.node[p2]['name'], gmapsmode)
                 else:
                     # Perform the lookup
                     now = datetime.now()
                     gdir = gmaps.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
                     dist = gdir[0]['legs'][0]['distance']['value']
                     _gmap_cache_db[dkey] = dist
-                    logger.debug('%s -( %d )-> %s (Google/%s/lookup)', a.node[p1]['name'], dist, a.node[p2]['name'], gmapsmode)
-            else:
-                logger.debug('%s -( %d )-> %s (Direct)', a.node[p1]['name'], dist, a.node[p2]['name'])
+                    logger.debug('%s -( %d )-> %s (Google/%s/lookup)', a.node[p1]['name'],
+                                 dist, a.node[p2]['name'], gmapsmode)
 
             matrow.append(dist)
 
+        _direct_dist_matrix.append(direct_matrow)
         _dist_matrix.append(matrow)
 
 
-def getPortalDistance(p1, p2):
-    logger.debug('p1=%s, p2=%s', p1, p2)
+def getPortalDistance(p1, p2, direct=False):
+    if direct:
+        logger.debug('%s->%s=%s (direct)', p1, p2, _direct_dist_matrix[p1][p2])
+        return _direct_dist_matrix[p1][p2]
+    logger.debug('%s->%s=%s (gmap)', p1, p2, _dist_matrix[p1][p2])
     return _dist_matrix[p1][p2]
 
 
@@ -328,6 +339,33 @@ def getWorkplanDist(a, workplan):
                     totaldist += dist
             prev_p = p
     return totaldist
+
+
+def getWorkplanArea(a, workplan):
+    totalarea = 0
+    for p, q, f in workplan:
+        if not f:
+            continue
+        fields = a.edges[p, q]['fields']
+        for p1, p2, p3 in fields:
+            if (p1, p2, p3) not in _area_cache:
+                s1 = getPortalDistance(p1, p2, direct=True)
+                s2 = getPortalDistance(p2, p3, direct=True)
+                s3 = getPortalDistance(p1, p3, direct=True)
+                # Hero's formula for triangle area
+                s = (s1 + s2 + s3)/2
+                try:
+                    area = int(np.sqrt(s * (s - s1) * (s - s2) * (s - s3)))
+                except ValueError:
+                    # Effectively, 0
+                    area = 0
+                _area_cache[(p1, p2, p3)] = area
+            else:
+                area = _area_cache[(p1, p2, p3)]
+            logger.debug('Field (%s-%s-%s), area: %s sqm', p1, p2, p3, area)
+            totalarea += area
+
+    return totalarea
 
 
 def fixPingPong(a, workplan):
@@ -560,7 +598,7 @@ def maxFields(a):
     return True
 
 
-def genCacheKey(a, ab, mode, beginfirst, roundtrip):
+def genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu):
     plls = list()
     for m in range(a.order()):
         plls.append(a.node[m]['pll'])
@@ -577,17 +615,19 @@ def genCacheKey(a, ab, mode, beginfirst, roundtrip):
         cachekey += '+beginfirst'
     if roundtrip:
         cachekey += '+roundtrip'
+    if maxmu:
+        cachekey += '+maxmu'
     cachekey += '-%s' % phash
 
     return cachekey
 
 
-def saveCache(a, ab, bestplan, bestdist, mode, beginfirst, roundtrip):
+def saveCache(a, ab, bestplan, mode, beginfirst, roundtrip, maxmu):
     # let's cache processing results for the same portals, just so
     # we can "add more cycles" to existing best plans
     # We use portal pll coordinates to generate the cache file key
     # and dump a in there.
-    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip)
+    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu)
     cachedir = getCacheDir()
     plancachedir = os.path.join(cachedir, 'plans')
     Path(plancachedir).mkdir(parents=True, exist_ok=True)
@@ -595,31 +635,26 @@ def saveCache(a, ab, bestplan, bestdist, mode, beginfirst, roundtrip):
     wc = shelve.open(cachefile, 'c')
     wc['bestplan'] = bestplan
     wc['bestgraph'] = a
-    wc['dist_matrix'] = _dist_matrix
-    wc['bestdist'] = bestdist
     logger.info('Saved plan cache in %s', cachefile)
     wc.close()
 
 
-def loadCache(a, ab, mode, beginfirst, roundtrip):
-    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip)
+def loadCache(a, ab, mode, beginfirst, roundtrip, maxmu):
+    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu)
     cachedir = getCacheDir()
     plancachedir = os.path.join(cachedir, 'plans')
     cachefile = os.path.join(plancachedir, cachekey)
     bestgraph = None
     bestplan = None
-    bestdist = np.inf
     try:
-        global _dist_matrix
         wc = shelve.open(cachefile, 'r')
         logger.info('Loading cache data from cache %s', cachefile)
-        _dist_matrix = wc['dist_matrix']
         bestgraph = wc['bestgraph']
         bestplan = wc['bestplan']
-        bestdist = wc['bestdist']
         wc.close()
     except:
         pass
-    return (bestgraph, bestplan, bestdist)
+
+    return bestgraph, bestplan
 
 

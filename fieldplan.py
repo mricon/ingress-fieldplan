@@ -7,12 +7,33 @@ import argparse
 from lib import gsheets, maxfield, animate
 
 import logging
+import multiprocessing as mp
+import queue
+import time
+
+import numpy as np
+np.seterr(divide='ignore', invalid='ignore')
+
 logger = logging.getLogger('fieldplan')
 
 # version number
 _V_ = '3.0.0'
 # max portals allowed
 _MAX_PORTALS_ = 25
+
+
+def queue_job(a, ready_queue):
+    # We just crank out plans until we are terminated
+    while True:
+        b = a.copy()
+        success = maxfield.maxFields(b)
+        if success:
+            for t in b.triangulation:
+                t.markEdgesWithFields()
+
+            maxfield.improveEdgeOrder(b)
+
+        ready_queue.put((success, b))
 
 
 # noinspection PyUnresolvedReferences
@@ -48,6 +69,10 @@ def main():
                         help='Google Maps API key (for better distances)')
     parser.add_argument('-f', '--faction', default='enl',
                         help='Set to "res" to use resistance colours')
+    parser.add_argument('-u', '--maxmu', action='store_true', default=False,
+                        help='Find a plan with best MU per distance travelled ratio')
+    parser.add_argument('--maxcpus', default=mp.cpu_count(), type=int,
+                        help='Maximum number of cpus to use')
     parser.add_argument('-l', '--log', default=None,
                         help='Log file where to log processing info')
     parser.add_argument('-d', '--debug', action='store_true', default=False,
@@ -109,14 +134,26 @@ def main():
     if blockers:
         ab = maxfield.populateGraph(blockers)
 
-    (bestgraph, bestplan, bestdist) = maxfield.loadCache(a, ab, args.travelmode, args.beginfirst, args.roundtrip)
-    if bestgraph is None:
-        # Use a copy, because we concat ab to a for blockers distances
-        maxfield.genDistanceMatrix(a.copy(), ab, args.gmapskey, args.travelmode)
-        bestkm = None
-    else:
+    # Use a copy, because we concat ab to a for blockers distances
+    maxfield.genDistanceMatrix(a.copy(), ab, args.gmapskey, args.travelmode)
+
+    (bestgraph, bestplan) = maxfield.loadCache(a, ab, args.travelmode,
+                                               args.beginfirst, args.roundtrip, args.maxmu)
+    if bestgraph is not None:
+        bestdist = maxfield.getWorkplanDist(bestgraph, bestplan)
+        bestarea = maxfield.getWorkplanArea(bestgraph, bestplan)
+        bestmudist = int(bestarea/bestdist)
         bestkm = bestdist/float(1000)
+        bestsqkm = bestarea/float(1000000)
         logger.info('Best distance of the plan loaded from cache: %0.2f km', bestkm)
+        logger.info('Best coverage of the plan loaded from cache: %0.2f sqkm', bestsqkm)
+
+    else:
+        bestkm = None
+        bestsqkm = None
+        bestdist = np.inf
+        bestarea = 0
+        bestmudist = 0
 
     counter = 0
 
@@ -130,31 +167,35 @@ def main():
     failcount = 0
     seenplans = list()
 
+    # set up multiprocessing
+    ready_queue = mp.Queue()
+    processes = list()
+    for i in range(args.maxcpus):
+        logger.debug('Starting process %s', i)
+        p = mp.Process(target=queue_job, args=(a, ready_queue))
+        processes.append(p)
+        p.start()
+    logger.info('Started %s worker processes', len(processes))
+
     try:
         while counter < args.iterations:
             if failcount >= 100:
                 logger.info('Too many consecutive failures, exiting early.')
                 break
 
-            b = a.copy()
+            success, b = ready_queue.get()
             counter += 1
 
             if not args.quiet:
                 if bestkm is not None:
-                    sys.stdout.write('\r(%0.2f km best, %s actions): %s/%s      ' % (
-                        bestkm, len(bestplan), counter, args.iterations))
+                    sys.stdout.write('\r(Best: %0.2f km, %0.2f sqkm, %s sqm/m, %s actions): %s/%s      ' % (
+                        bestkm, bestsqkm, bestmudist, len(bestplan), counter, args.iterations))
                     sys.stdout.flush()
 
-            failcount += 1
-            if not maxfield.maxFields(b):
-                logger.debug('Could not find a triangulation')
+            if not success:
                 failcount += 1
                 continue
 
-            for t in b.triangulation:
-                t.markEdgesWithFields()
-
-            maxfield.improveEdgeOrder(b)
             workplan = maxfield.makeWorkPlan(b, ab, args.roundtrip, args.beginfirst)
 
             if args.maxkeys:
@@ -184,22 +225,44 @@ def main():
             failcount = 0
 
             totaldist = maxfield.getWorkplanDist(b, workplan)
+            totalarea = maxfield.getWorkplanArea(b, workplan)
+            mudist = int(totalarea/totaldist)
 
-            # We take the shorter plan, or a plan with a similar length that requires fewer actions,
-            # and we have not yet considered this plan
-            if ((totaldist < bestdist or (len(workplan) < len(bestplan) and totaldist-bestdist <= 80))
-                    and workplan not in seenplans):
+            newbest = False
+            if args.maxmu:
+                # choose a plan that gives us most MU captured per distance of travel
+                if mudist > bestmudist:
+                    newbest = True
+            else:
+                # We want:
+                # - the shorter plan, or
+                # - the plan with a similar length that requires fewer actions, or
+                # - the plan with a similar length that has higher mu per distance of travel
+                # - we have not yet considered this plan
+                if ((bestdist-totaldist > 80 or
+                     (len(workplan) < len(bestplan) and totaldist-bestdist <= 80) or
+                     (mudist > bestmudist and totaldist-bestdist <= 80))
+                        and workplan not in seenplans):
+                    newbest = True
+
+            if newbest:
                 counter = 0
                 bestplan = workplan
                 seenplans.append(workplan)
                 bestgraph = b
                 bestdist = totaldist
+                bestarea = totalarea
                 bestkm = bestdist/float(1000)
+                bestsqkm = bestarea/float(1000000)
+                bestmudist = mudist
 
     except KeyboardInterrupt:
         if not args.quiet:
             print()
             print('Exiting loop')
+    finally:
+        for p in processes:
+            p.terminate()
 
     if not args.quiet:
         print()
@@ -208,13 +271,14 @@ def main():
         logger.critical('Could not find a solution for this list of portals.')
         sys.exit(1)
 
-    maxfield.saveCache(bestgraph, ab, bestplan, bestdist, args.travelmode, args.beginfirst, args.roundtrip)
+    maxfield.saveCache(bestgraph, ab, bestplan, args.travelmode,
+                       args.beginfirst, args.roundtrip, args.maxmu)
 
     if args.plots:
         animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction, args.plotdpi)
 
     gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.faction, args.travelmode, args.nosave,
-                           args.roundtrip)
+                           args.roundtrip, args.maxmu)
 
 
 if __name__ == "__main__":
