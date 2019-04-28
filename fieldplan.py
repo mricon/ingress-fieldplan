@@ -162,8 +162,6 @@ def main():
     else:
         logger.info('Finding an efficient plan')
 
-    logger.info('Ctrl-C to exit and use the latest best plan')
-
     failcount = 0
     seenplans = list()
 
@@ -176,6 +174,8 @@ def main():
         processes.append(p)
         p.start()
     logger.info('Started %s worker processes', len(processes))
+
+    logger.info('Ctrl-C to exit and use the latest best plan')
 
     try:
         while counter < args.iterations:

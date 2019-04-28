@@ -467,7 +467,7 @@ def improveEdgeOrder(a):
                 # that we've already been to before
                 closest_node_pos = 0
                 shortest_hop = None
-                for j in range(z-1, -1, -1):
+                for j in range(0, z):
                     if linkplan[j][0] == prev_origin:
                         # Found exact match
                         closest_node_pos = j
