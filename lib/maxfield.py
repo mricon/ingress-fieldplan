@@ -164,15 +164,20 @@ def populateGraph(portals):
     return a
 
 
-def makeWorkPlan(a, ab=None, roundtrip=False, beginfirst=False):
-    global _capture_cache
-
-    # make a linkplan first
+def makeLinkPlan(a):
     linkplan = [None] * a.size()
 
     for p, q in a.edges():
         linkplan[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']))
 
+    linkplan = fixPingPong(a, linkplan)
+    return linkplan
+
+
+def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False):
+    global _capture_cache
+
+    # make a linkplan first
     # Add blockers we need to destroy
     all_p = list(range(a.order()))
     if ab is not None:
@@ -193,7 +198,6 @@ def makeWorkPlan(a, ab=None, roundtrip=False, beginfirst=False):
         endp = 0
         cachekey = startp
     elif roundtrip:
-        linkplan = fixPingPong(a, linkplan)
         endp = linkplan[-1][0]
         cachekey = (startp, endp)
     else:
@@ -341,28 +345,23 @@ def getWorkplanDist(a, workplan):
     return totaldist
 
 
-def getWorkplanArea(a, workplan):
+def getLinkplanArea(a, linkplan):
     totalarea = 0
-    for p, q, f in workplan:
+    for p, q, f in linkplan:
         if not f:
             continue
-        fields = a.edges[p, q]['fields']
-        for p1, p2, p3 in fields:
-            if (p1, p2, p3) not in _area_cache:
-                s1 = getPortalDistance(p1, p2, direct=True)
-                s2 = getPortalDistance(p2, p3, direct=True)
-                s3 = getPortalDistance(p1, p3, direct=True)
-                # Hero's formula for triangle area
-                s = (s1 + s2 + s3)/2
-                try:
-                    area = int(np.sqrt(s * (s - s1) * (s - s2) * (s - s3)))
-                except ValueError:
-                    # Effectively, 0
-                    area = 0
-                _area_cache[(p1, p2, p3)] = area
-            else:
-                area = _area_cache[(p1, p2, p3)]
-            logger.debug('Field (%s-%s-%s), area: %s sqm', p1, p2, p3, area)
+        for t in a.edges[p, q]['fields']:
+            s1 = getPortalDistance(t[0], t[1], direct=True)
+            s2 = getPortalDistance(t[1], t[2], direct=True)
+            s3 = getPortalDistance(t[0], t[2], direct=True)
+            # Hero's formula for triangle area
+            s = (s1 + s2 + s3)/2
+            try:
+                area = int(np.sqrt(s * (s - s1) * (s - s2) * (s - s3)))
+            except ValueError:
+                # Effectively, 0
+                area = 0
+            logger.debug('Field %s-%s-%s, area: %s sqm', t[0], t[1], t[2], area)
             totalarea += area
 
     return totalarea

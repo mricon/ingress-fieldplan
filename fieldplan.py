@@ -22,18 +22,41 @@ _V_ = '3.0.0'
 _MAX_PORTALS_ = 25
 
 
-def queue_job(a, ready_queue):
+def queue_job(a, ab, args, ready_queue):
     # We just crank out plans until we are terminated
     while True:
+        if ready_queue.qsize() > 10:
+            # Queue is getting full, so do an idle loop
+            time.sleep(0.1)
+            continue
         b = a.copy()
         success = maxfield.maxFields(b)
-        if success:
-            for t in b.triangulation:
-                t.markEdgesWithFields()
+        linkplan = None
+        area = None
+        if success and args.maxkeys:
+            # do any of the portals require more than maxkeys
+            sane_key_reqs = True
+            for i in range(len(b.node)):
+                if b.in_degree(i) > args.maxkeys:
+                    sane_key_reqs = False
+                    break
 
-            maxfield.improveEdgeOrder(b)
+            if not sane_key_reqs:
+                success = False
+        if not success:
+            ready_queue.put((False, None, None, None, None))
+            continue
 
-        ready_queue.put((success, b))
+        for t in b.triangulation:
+            t.markEdgesWithFields()
+
+        maxfield.improveEdgeOrder(b)
+        linkplan = maxfield.makeLinkPlan(b)
+        totalarea = maxfield.getLinkplanArea(b, linkplan)
+        workplan = maxfield.makeWorkPlan(linkplan, b, ab, args.roundtrip, args.beginfirst)
+        totaldist = maxfield.getWorkplanDist(b, workplan)
+
+        ready_queue.put((success, b, workplan, totaldist, totalarea))
 
 
 # noinspection PyUnresolvedReferences
@@ -141,7 +164,7 @@ def main():
                                                args.beginfirst, args.roundtrip, args.maxmu)
     if bestgraph is not None:
         bestdist = maxfield.getWorkplanDist(bestgraph, bestplan)
-        bestarea = maxfield.getWorkplanArea(bestgraph, bestplan)
+        bestarea = maxfield.getLinkplanArea(bestgraph, bestplan)
         bestmudist = int(bestarea/bestdist)
         bestkm = bestdist/float(1000)
         bestsqkm = bestarea/float(1000000)
@@ -159,8 +182,10 @@ def main():
 
     if args.maxkeys:
         logger.info('Finding an efficient plan with max %s keys', args.maxkeys)
+    elif args.maxmu:
+        logger.info('Finding an efficient plan that maximizes MU coverage')
     else:
-        logger.info('Finding an efficient plan')
+        logger.info('Finding the shortest plan')
 
     failcount = 0
     seenplans = list()
@@ -170,7 +195,7 @@ def main():
     processes = list()
     for i in range(args.maxcpus):
         logger.debug('Starting process %s', i)
-        p = mp.Process(target=queue_job, args=(a, ready_queue))
+        p = mp.Process(target=queue_job, args=(a, ab, args, ready_queue))
         processes.append(p)
         p.start()
     logger.info('Started %s worker processes', len(processes))
@@ -183,7 +208,11 @@ def main():
                 logger.info('Too many consecutive failures, exiting early.')
                 break
 
-            success, b = ready_queue.get()
+            success, b, workplan, totaldist, totalarea = ready_queue.get()
+            if not success:
+                failcount += 1
+                continue
+
             counter += 1
 
             if not args.quiet:
@@ -192,40 +221,8 @@ def main():
                         bestkm, bestsqkm, bestmudist, len(bestplan), counter, args.iterations))
                     sys.stdout.flush()
 
-            if not success:
-                failcount += 1
-                continue
-
-            workplan = maxfield.makeWorkPlan(b, ab, args.roundtrip, args.beginfirst)
-
-            if args.maxkeys:
-                # do any of the portals require more than maxkeys
-                sane_key_reqs = True
-                for i in range(len(b.node)):
-                    if b.in_degree(i) > args.maxkeys:
-                        sane_key_reqs = False
-                        break
-
-                if not sane_key_reqs:
-                    failcount += 1
-                    logger.debug('Too many keys required, ignoring plan')
-                    continue
-
-            sane_out_links = True
-            for i in range(len(b.node)):
-                if b.out_degree(i) > 8:
-                    sane_out_links = False
-                    break
-
-            if not sane_out_links:
-                failcount += 1
-                logger.debug('Too many outgoing links, ignoring plan')
-                continue
-
             failcount = 0
 
-            totaldist = maxfield.getWorkplanDist(b, workplan)
-            totalarea = maxfield.getWorkplanArea(b, workplan)
             mudist = int(totalarea/totaldist)
 
             newbest = False
@@ -233,6 +230,10 @@ def main():
                 # choose a plan that gives us most MU captured per distance of travel
                 if mudist > bestmudist:
                     newbest = True
+            elif workplan in seenplans:
+                # Already seen this plan, so don't consider it again. This is done
+                # to avoid pingpoings for best plan.
+                continue
             else:
                 # We want:
                 # - the shorter plan, or
@@ -241,11 +242,13 @@ def main():
                 # - we have not yet considered this plan
                 if ((bestdist-totaldist > 80 or
                      (len(workplan) < len(bestplan) and totaldist-bestdist <= 80) or
-                     (mudist > bestmudist and totaldist-bestdist <= 80))
-                        and workplan not in seenplans):
+                     (mudist > bestmudist and totaldist-bestdist <= 80))):
                     newbest = True
 
             if newbest:
+                if bestplan:
+                    sys.stdout.write('\r(      %0.2f km, %0.2f sqkm, %s sqm/m, %s actions): %s/%s      \n' % (
+                        bestkm, bestsqkm, bestmudist, len(bestplan), counter, args.iterations))
                 counter = 0
                 bestplan = workplan
                 seenplans.append(workplan)
