@@ -19,18 +19,42 @@ from ortools.constraint_solver import pywrapcp
 from ortools.constraint_solver import routing_enums_pb2
 
 from random import shuffle
+from datetime import timedelta
 
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 
 TRIES_PER_TRI = 10
 
+CAPTUREAP = 500+(125*8)+250+(125*2)
+LINKAP = 313
+FIELDAP = 1250
+
+cooltime = {
+    'none': 5,
+    'hs': 4,
+    'rhs': 2.5,
+    'vrhs': 1.5,
+}
+
 logger = logging.getLogger('fieldplan')
+
+_master_graph = None
+_current_graph = None
 
 _capture_cache = dict()
 _dist_matrix = list()
+_time_matrix = list()
 _direct_dist_matrix = list()
 _area_cache = dict()
+
+# in metres per minute, only used in the absence of Google Maps API
+travel_speed = {
+    'walking': 80,
+    'bicycling': 300,
+    'driving': 1000,
+    'transit': 500,
+}
 
 
 def getCacheDir():
@@ -85,12 +109,14 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
     # since the agent doesn't need to travel to access both portals.
     for p1 in range(n):
         matrow = list()
+        matrow_dur = list()
         direct_matrow = list()
         for p2 in range(n):
             # Do direct distance first
             p1pos = a.node[p1]['geo']
             p2pos = a.node[p2]['geo']
             dist = int(geometry.sphereDist(p1pos, p2pos)[0])
+            duration = int(dist/travel_speed[gmapsmode])
             direct_matrow.append(dist)
             logger.debug('%s -( %d )-> %s (Direct)', a.node[p1]['name'], dist, a.node[p2]['name'])
 
@@ -101,13 +127,17 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
                 p2pos = a.node[p2]['pll']
                 dkey = '%s,%s,%s' % (p1pos, p2pos, gmapsmode)
                 rkey = '%s,%s,%s' % (p2pos, p1pos, gmapsmode)
+                dkey_dur = '%s_dur' % dkey
+                rkey_dur = '%s_dur' % rkey
 
-                if dkey in _gmap_cache_db:
+                if dkey in _gmap_cache_db and dkey_dur in _gmap_cache_db:
                     dist = _gmap_cache_db[dkey]
+                    duration = _gmap_cache_db[dkey_dur]
                     logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'],
                                  dist, a.node[p2]['name'], gmapsmode)
-                elif rkey in _gmap_cache_db:
+                elif rkey in _gmap_cache_db and rkey_dur in _gmap_cache_db:
                     dist = _gmap_cache_db[rkey]
+                    duration = _gmap_cache_db[rkey_dur]
                     logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'],
                                  dist, a.node[p2]['name'], gmapsmode)
                 else:
@@ -115,22 +145,38 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
                     now = datetime.now()
                     gdir = gmaps.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
                     dist = gdir[0]['legs'][0]['distance']['value']
+                    duration = int(gdir[0]['legs'][0]['duration']['value']/60)
                     _gmap_cache_db[dkey] = dist
+                    _gmap_cache_db[dkey_dur] = duration
                     logger.debug('%s -( %d )-> %s (Google/%s/lookup)', a.node[p1]['name'],
                                  dist, a.node[p2]['name'], gmapsmode)
 
             matrow.append(dist)
+            matrow_dur.append(duration)
 
         _direct_dist_matrix.append(direct_matrow)
         _dist_matrix.append(matrow)
+        _time_matrix.append(matrow_dur)
 
 
 def getPortalDistance(p1, p2, direct=False):
+    mp1 = _current_graph.node[p1]['pos']
+    mp2 = _current_graph.node[p2]['pos']
     if direct:
-        logger.debug('%s->%s=%s (direct)', p1, p2, _direct_dist_matrix[p1][p2])
-        return _direct_dist_matrix[p1][p2]
-    logger.debug('%s->%s=%s (gmap)', p1, p2, _dist_matrix[p1][p2])
-    return _dist_matrix[p1][p2]
+        logger.debug('%s->%s=%s (direct)', _master_graph.node[mp1]['name'],
+                     _master_graph.node[mp2]['name'], _direct_dist_matrix[mp1][mp2])
+        return _direct_dist_matrix[mp1][mp2]
+    logger.debug('%s->%s=%s (gmap)', _master_graph.node[mp1]['name'],
+                 _master_graph.node[mp2]['name'], _dist_matrix[mp1][mp2])
+    return _dist_matrix[mp1][mp2]
+
+
+def getPortalTime(p1, p2):
+    mp1 = _current_graph.node[p1]['pos']
+    mp2 = _current_graph.node[p2]['pos']
+    logger.debug('%s->%s=%s seconds (gmap)', _master_graph.node[mp1]['name'],
+                 _master_graph.node[mp2]['name'], _time_matrix[mp1][mp2])
+    return int(_time_matrix[mp1][mp2])
 
 
 def populateGraph(portals):
@@ -157,9 +203,16 @@ def populateGraph(portals):
     xy = geometry.gnomonicProj(locs,xyz)
 
     for i in range(n):
+        a.node[i]['pos'] = i
         a.node[i]['geo'] = locs[i]
         a.node[i]['xyz'] = xyz[i]
-        a.node[i]['xy' ] = xy[i]
+        a.node[i]['xy'] = xy[i]
+
+    # Set it for distance/area calculation purposes
+    global _master_graph
+    global _current_graph
+    _master_graph = a.copy()
+    _current_graph = _master_graph
 
     return a
 
@@ -174,7 +227,7 @@ def makeLinkPlan(a):
     return linkplan
 
 
-def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False):
+def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False, is_subset=False):
     global _capture_cache
 
     # make a linkplan first
@@ -194,14 +247,18 @@ def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False):
     logger.debug('beginfirst=%s', beginfirst)
 
     startp = linkplan[0][0]
+    cachekey = list()
+    if is_subset:
+        for n in range(a.order()):
+            cachekey.append(a.node[n]['pos'])
     if beginfirst:
         endp = 0
-        cachekey = startp
+        cachekey = tuple(cachekey + [a.node[startp]['pos']])
     elif roundtrip:
         endp = linkplan[-1][0]
-        cachekey = (startp, endp)
+        cachekey = tuple(cachekey + [a.node[startp]['pos'], a.node[endp]['pos']])
     else:
-        cachekey = startp
+        cachekey = tuple(cachekey + [a.node[startp]['pos']])
         endp = startp
 
     if cachekey not in _capture_cache:
@@ -220,7 +277,7 @@ def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False):
 
         routing = pywrapcp.RoutingModel(len(all_p), 1, [endp], [startp])
 
-        routing.SetArcCostEvaluatorOfAllVehicles(getPortalDistance)
+        routing.SetArcCostEvaluatorOfAllVehicles(getPortalTime)
         search_parameters = pywrapcp.RoutingModel.DefaultSearchParameters()
         search_parameters.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
@@ -236,13 +293,13 @@ def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False):
 
         dist_ordered.append(routing.IndexToNode(index))
         dist_ordered.remove(startp)
-        # Find clusters that are within 160m of each-other
+        # Find clusters that are within 5 min travel of each-other
         # We shuffle them later in hopes that it gives us a more efficient
         # capture/link sequence.
         clusters = list()
         cluster = [dist_ordered[0]]
         for p in dist_ordered[1:]:
-            if getPortalDistance(cluster[0], p) <= 160:
+            if getPortalTime(cluster[0], p) <= 5:
                 cluster.append(p)
                 continue
             clusters.append(cluster)
@@ -331,25 +388,103 @@ def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False):
     return workplan
 
 
-def getWorkplanDist(a, workplan):
-    prev_p = None
+def getWorkplanStats(a, workplan, cooling='rhs'):
+    totalap = a.order() * CAPTUREAP
     totaldist = 0
+    totalarea = 0
+    totaltime = 0
+    traveltime = 0
+    links = 0
+    fields = 0
+
+    prev_p = None
+    plan_at = 0
     for p, q, f in workplan:
+        plan_at += 1
+
         # Are we at a different location than the previous portal?
         if p != prev_p:
+            # We are at a new portal, so add 1 minute just because
+            # it takes time to get positioned and get to the right
+            # screen in the UI
+            totaltime += 1
+            # How many keys do we need if/until we come back?
+            ensurekeys = 0
+            totalkeys = 0
+            # Track when we leave this portal
+            lastvisit = True
+            same_p = True
+            for fp, fq, ff in workplan[plan_at:]:
+                if fp == p:
+                    # Are we still at the same portal?
+                    if same_p:
+                        continue
+                    if lastvisit:
+                        lastvisit = False
+                        ensurekeys = totalkeys
+                else:
+                    # we're at a different portal
+                    same_p = False
+                if fq == p:
+                    # Future link to this portal
+                    totalkeys += 1
+
             if prev_p is not None:
+                duration = getPortalTime(prev_p, p)
+                totaltime += duration
+                traveltime += duration
                 dist = getPortalDistance(prev_p, p)
                 if dist > 40:
                     totaldist += dist
+
+            # Are we at a blocker?
+            if 'blocker' in a.node[p]:
+                # assume it takes 3 minutes to destroy a blocker
+                totaltime += 3
+                prev_p = p
+                continue
+
+            needkeys = 0
+            if totalkeys:
+                if lastvisit:
+                    needkeys = totalkeys
+                elif ensurekeys:
+                    needkeys = ensurekeys
+
+            # IDKFA means you already have all the keys
+            if needkeys and cooling != 'idkfa':
+                # We assume:
+                # - we get roughly 1.5 keys per each hack
+                # - we glyph-hack, meaning it takes about half minute per actual hack action
+                needed_hacks = int((needkeys/1.5) + (needkeys % 1.5))
+                # Hacking time
+                totaltime += needed_hacks/2
+                if cooling == 'none':
+                    # uh-oh, no cooling?
+                    totaltime += cooltime['none']*(needed_hacks-1)
+                elif needed_hacks > 2:
+                    # second hack is free regardless of the type of HS
+                    totaltime += cooltime[cooling]*(needed_hacks-2)
+
+            if lastvisit:
+                # Add half a minute for putting on shields
+                totaltime += 0.5
+
             prev_p = p
-    return totaldist
 
+        if not q:
+            continue
 
-def getLinkplanArea(a, linkplan):
-    totalarea = 0
-    for p, q, f in linkplan:
+        # Add 15 seconds per link
+        totaltime += 0.25
+        totalap += LINKAP
+        links += 1
+
         if not f:
             continue
+
+        fields += f
+        totalap += FIELDAP*f
         for t in a.edges[p, q]['fields']:
             s1 = getPortalDistance(t[0], t[1], direct=True)
             s2 = getPortalDistance(t[1], t[2], direct=True)
@@ -364,7 +499,19 @@ def getLinkplanArea(a, linkplan):
             logger.debug('Field %s-%s-%s, area: %s sqm', t[0], t[1], t[2], area)
             totalarea += area
 
-    return totalarea
+    stats = {
+        'time': totaltime,
+        'nicetime': str(timedelta(minutes=totaltime)),
+        'traveltime': traveltime,
+        'nicetraveltime': str(timedelta(minutes=traveltime)),
+        'ap': totalap,
+        'dist': totaldist,
+        'area': totalarea,
+        'links': links,
+        'fields': fields,
+    }
+
+    return stats
 
 
 def fixPingPong(a, workplan):
@@ -453,13 +600,47 @@ def improveEdgeOrder(a):
     a.fixes = list()
 
     prev_origin = None
+    fielders_moved = False
+    seen_origins = list()
     prev_origin_created_fields = False
     z = None
     # This moves non-fielding origins closer to other portals
     for i in range(m):
         p, q, f = linkplan[i]
+        # If both the origin and the target are in seen_origins, then
+        # flipping the link will probably give us a more efficient
+        # fielding plan
+        reverse_edge = False
+        if p in seen_origins and q in seen_origins and f < 2:
+            reverse_edge = True
+
+        # If we haven't visited this target yet, but will in the future,
+        # we're better off reversing the link
+        if q not in seen_origins and m - i > 1 and f < 2:
+            for j in range(i+1, m):
+                if linkplan[j][0] == q:
+                    reverse_edge = True
+                    break
+
+        if reverse_edge and a.out_degree(q) < 8:
+            attrs = a.edges[p, q]
+            a.add_edge(q, p, **attrs)
+            a.remove_edge(p, q)
+            linkplan[i] = (q, p, f)
+            a.fixes.append('reversed %s->%s:' % (p, q))
+            if f:
+                fielders_moved = True
+            # Send us for another loop on this
+            i -= 1
+            continue
+
         if prev_origin != p:
             # we moved to a new origin
+            if p not in seen_origins:
+                seen_origins.append(p)
+
+            # If the target is in seen_origins, then we flip the link
+            # around and move it to happen
             if z and not prev_origin_created_fields:
                 # previous origin didn't create any fields, so move it
                 # to happen right before the same (or closest) portal
@@ -496,13 +677,20 @@ def improveEdgeOrder(a):
         if f:
             prev_origin_created_fields = True
 
-    # Stick linkplan into a for debugging purposes
-    a.linkplan = linkplan
-
     # Record the new order of edges
     for i in range(m):
         p, q, f = linkplan[i]
         a.edges[p, q]['order'] = i
+        if fielders_moved:
+            a.edges[p, q]['fields'] = list()
+
+    if fielders_moved:
+        # Recalculate fields
+        for t in a.triangulation:
+            t.markEdgesWithFields()
+
+    # Stick linkplan into a for debugging purposes
+    a.linkplan = linkplan
 
 
 def removeSince(a, m, t):
@@ -597,7 +785,7 @@ def maxFields(a):
     return True
 
 
-def genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu):
+def genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit):
     plls = list()
     for m in range(a.order()):
         plls.append(a.node[m]['pll'])
@@ -616,17 +804,19 @@ def genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu):
         cachekey += '+roundtrip'
     if maxmu:
         cachekey += '+maxmu'
+    if timelimit:
+        cachekey += '+timelimit-%s' % timelimit
     cachekey += '-%s' % phash
 
     return cachekey
 
 
-def saveCache(a, ab, bestplan, mode, beginfirst, roundtrip, maxmu):
+def saveCache(a, ab, bestplan, mode, beginfirst, roundtrip, maxmu, timelimit):
     # let's cache processing results for the same portals, just so
     # we can "add more cycles" to existing best plans
     # We use portal pll coordinates to generate the cache file key
     # and dump a in there.
-    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu)
+    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit)
     cachedir = getCacheDir()
     plancachedir = os.path.join(cachedir, 'plans')
     Path(plancachedir).mkdir(parents=True, exist_ok=True)
@@ -638,8 +828,8 @@ def saveCache(a, ab, bestplan, mode, beginfirst, roundtrip, maxmu):
     wc.close()
 
 
-def loadCache(a, ab, mode, beginfirst, roundtrip, maxmu):
-    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu)
+def loadCache(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit):
+    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit)
     cachedir = getCacheDir()
     plancachedir = os.path.join(cachedir, 'plans')
     cachefile = os.path.join(plancachedir, cachekey)

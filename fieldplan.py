@@ -8,8 +8,10 @@ from lib import gsheets, maxfield, animate
 
 import logging
 import multiprocessing as mp
-import queue
 import time
+
+import networkx as nx
+import random
 
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
@@ -17,26 +19,50 @@ np.seterr(divide='ignore', invalid='ignore')
 logger = logging.getLogger('fieldplan')
 
 # version number
-_V_ = '3.0.0'
-# max portals allowed
-_MAX_PORTALS_ = 25
+_V_ = '3.1.0'
 
 
 def queue_job(a, ab, args, ready_queue):
+    # When limiting the number of actions, we use this
+    # counter to see how many portals out of the total
+    # number provided we need to consider.
+    maxportals = a.order()
+    p_considered = maxportals
+    is_subset = False
     # We just crank out plans until we are terminated
     while True:
         if ready_queue.qsize() > 10:
             # Queue is getting full, so do an idle loop
             time.sleep(0.1)
             continue
-        b = a.copy()
+        if p_considered == maxportals and args.minportals is None:
+            b = a.copy()
+        else:
+            b = nx.DiGraph()
+            ct = 0
+            is_subset = True
+            if args.minportals is not None:
+                # Play with the number of portals to consider to arrive at the best
+                # MU per distance travelled number. Randomly select a number of portals
+                # between 3 and p_considered
+                subset = random.sample(range(maxportals),
+                                       random.randint(args.minportals, p_considered))
+            else:
+                subset = random.sample(range(maxportals), p_considered)
+
+            subset.sort()
+            if args.beginfirst:
+                subset[0] = 0
+            for num in subset:
+                attrs = a.node[num]
+                b.add_node(ct, **attrs)
+                ct += 1
+
         success = maxfield.maxFields(b)
-        linkplan = None
-        area = None
         if success and args.maxkeys:
             # do any of the portals require more than maxkeys
             sane_key_reqs = True
-            for i in range(len(b.node)):
+            for i in range(b.order()):
                 if b.in_degree(i) > args.maxkeys:
                     sane_key_reqs = False
                     break
@@ -44,19 +70,32 @@ def queue_job(a, ab, args, ready_queue):
             if not sane_key_reqs:
                 success = False
         if not success:
-            ready_queue.put((False, None, None, None, None))
+            ready_queue.put((False, None, None, None))
             continue
 
+        maxfield._current_graph = b
         for t in b.triangulation:
             t.markEdgesWithFields()
 
         maxfield.improveEdgeOrder(b)
         linkplan = maxfield.makeLinkPlan(b)
-        totalarea = maxfield.getLinkplanArea(b, linkplan)
-        workplan = maxfield.makeWorkPlan(linkplan, b, ab, args.roundtrip, args.beginfirst)
-        totaldist = maxfield.getWorkplanDist(b, workplan)
+        workplan = maxfield.makeWorkPlan(linkplan, b, ab, args.roundtrip, args.beginfirst, is_subset)
+        stats = maxfield.getWorkplanStats(b, workplan, cooling=args.cooling)
 
-        ready_queue.put((success, b, workplan, totaldist, totalarea))
+        if args.maxtime is not None:
+            if stats['time'] > args.maxtime:
+                p_considered -= 1
+                if p_considered < 3:
+                    p_considered = 3
+                ready_queue.put((False, None, None, None))
+                continue
+            elif p_considered < maxportals:
+                p_considered += 1
+            if args.mintime is not None and stats['time'] < args.mintime:
+                ready_queue.put((False, None, None, None))
+                continue
+
+        ready_queue.put((success, b, workplan, stats))
 
 
 # noinspection PyUnresolvedReferences
@@ -92,8 +131,17 @@ def main():
                         help='Google Maps API key (for better distances)')
     parser.add_argument('-f', '--faction', default='enl',
                         help='Set to "res" to use resistance colours')
+    parser.add_argument('-c', '--cooling', default='rhs',
+                        help='What kind of heatsinks to assume (hs, rhs, vrhs, none, idkfa)')
     parser.add_argument('-u', '--maxmu', action='store_true', default=False,
-                        help='Find a plan with best MU per distance travelled ratio')
+                        help='Find a plan with highest MU coverage instead of best AP')
+    parser.add_argument('--minportals', type=int, default=None,
+                        help=('Minimum number of portals to consider when reducing portal count '
+                              '(default: consider all portals'))
+    parser.add_argument('-t', '--maxtime', default=None, type=int,
+                        help='Ignore plans that would take longer than this (in minutes)')
+    parser.add_argument('--mintime', default=None, type=int,
+                        help='Ignore plans that would take less time than this (in minutes)')
     parser.add_argument('--maxcpus', default=mp.cpu_count(), type=int,
                         help='Maximum number of cpus to use')
     parser.add_argument('-l', '--log', default=None,
@@ -148,9 +196,6 @@ def main():
         logger.critical('Must have more than 2 portals!')
         sys.exit(1)
 
-    if len(portals) > _MAX_PORTALS_:
-        logger.critical('Portal limit is %d', _MAX_PORTALS_)
-
     a = maxfield.populateGraph(portals)
 
     ab = None
@@ -161,22 +206,29 @@ def main():
     maxfield.genDistanceMatrix(a.copy(), ab, args.gmapskey, args.travelmode)
 
     (bestgraph, bestplan) = maxfield.loadCache(a, ab, args.travelmode,
-                                               args.beginfirst, args.roundtrip, args.maxmu)
+                                               args.beginfirst, args.roundtrip, args.maxmu, args.maxtime)
     if bestgraph is not None:
-        bestdist = maxfield.getWorkplanDist(bestgraph, bestplan)
-        bestarea = maxfield.getLinkplanArea(bestgraph, bestplan)
-        bestmudist = int(bestarea/bestdist)
+        beststats = maxfield.getWorkplanStats(bestgraph, bestplan)
+        bestdist = beststats['dist']
+        bestarea = beststats['area']
         bestkm = bestdist/float(1000)
         bestsqkm = bestarea/float(1000000)
+        nicetime = beststats['nicetime']
+        bestmutime = bestarea/beststats['time']
+        bestap = beststats['ap']
+        bestaptime = bestap/beststats['time']
         logger.info('Best distance of the plan loaded from cache: %0.2f km', bestkm)
-        logger.info('Best coverage of the plan loaded from cache: %0.2f sqkm', bestsqkm)
+        logger.info('Best coverage of the plan loaded from cache: %0.2f km2', bestsqkm)
+        logger.info('Best AP of the plan loaded from cache: %s', bestap)
 
     else:
         bestkm = None
         bestsqkm = None
-        bestdist = np.inf
-        bestarea = 0
-        bestmudist = 0
+        beststats = None
+        bestmutime = 0
+        bestap = 0
+        nicetime = '0:00'
+        bestaptime = 0
 
     counter = 0
 
@@ -185,7 +237,7 @@ def main():
     elif args.maxmu:
         logger.info('Finding an efficient plan that maximizes MU coverage')
     else:
-        logger.info('Finding the shortest plan')
+        logger.info('Finding an efficient plan that maximizes AP')
 
     failcount = 0
     seenplans = list()
@@ -204,60 +256,58 @@ def main():
 
     try:
         while counter < args.iterations:
-            if failcount >= 100:
+            if failcount > 1000:
                 logger.info('Too many consecutive failures, exiting early.')
                 break
 
-            success, b, workplan, totaldist, totalarea = ready_queue.get()
+            success, b, workplan, stats = ready_queue.get()
             if not success:
                 failcount += 1
+                continue
+            if workplan in seenplans:
+                # Already seen this plan, so don't consider it again. This is done
+                # to avoid pingpoings for best plan.
                 continue
 
             counter += 1
 
             if not args.quiet:
                 if bestkm is not None:
-                    sys.stdout.write('\r(Best: %0.2f km, %0.2f sqkm, %s sqm/m, %s actions): %s/%s      ' % (
-                        bestkm, bestsqkm, bestmudist, len(bestplan), counter, args.iterations))
+                    sys.stdout.write('\r(Best: %0.2f km, %0.2f km2, %s portals, %s AP, %s): %s/%s     ' % (
+                        bestkm, bestsqkm, bestgraph.order(), bestap, nicetime, counter, args.iterations))
                     sys.stdout.flush()
 
             failcount = 0
 
-            mudist = int(totalarea/totaldist)
+            mutime = int(stats['area']/stats['time'])
+            aptime = int(stats['ap']/stats['time'])
 
             newbest = False
             if args.maxmu:
                 # choose a plan that gives us most MU captured per distance of travel
-                if mudist > bestmudist:
+                if mutime > bestmutime:
                     newbest = True
-            elif workplan in seenplans:
-                # Already seen this plan, so don't consider it again. This is done
-                # to avoid pingpoings for best plan.
-                continue
             else:
-                # We want:
-                # - the shorter plan, or
-                # - the plan with a similar length that requires fewer actions, or
-                # - the plan with a similar length that has higher mu per distance of travel
-                # - we have not yet considered this plan
-                if ((bestdist-totaldist > 80 or
-                     (len(workplan) < len(bestplan) and totaldist-bestdist <= 80) or
-                     (mudist > bestmudist and totaldist-bestdist <= 80))):
+                # We want most AP per distance of travel
+                if aptime > bestaptime:
                     newbest = True
 
             if newbest:
                 if bestplan:
-                    sys.stdout.write('\r(      %0.2f km, %0.2f sqkm, %s sqm/m, %s actions): %s/%s      \n' % (
-                        bestkm, bestsqkm, bestmudist, len(bestplan), counter, args.iterations))
+                    sys.stdout.write('\r(     \n')
+                beststats = stats
                 counter = 0
                 bestplan = workplan
                 seenplans.append(workplan)
                 bestgraph = b
-                bestdist = totaldist
-                bestarea = totalarea
+                bestdist = stats['dist']
+                bestarea = stats['area']
                 bestkm = bestdist/float(1000)
                 bestsqkm = bestarea/float(1000000)
-                bestmudist = mudist
+                nicetime = stats['nicetime']
+                bestmutime = mutime
+                bestap = stats['ap']
+                bestaptime = aptime
 
     except KeyboardInterrupt:
         if not args.quiet:
@@ -274,14 +324,15 @@ def main():
         logger.critical('Could not find a solution for this list of portals.')
         sys.exit(1)
 
+    maxfield._current_graph = bestgraph
+
     maxfield.saveCache(bestgraph, ab, bestplan, args.travelmode,
-                       args.beginfirst, args.roundtrip, args.maxmu)
+                       args.beginfirst, args.roundtrip, args.maxmu, args.maxtime)
 
     if args.plots:
         animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction, args.plotdpi)
 
-    gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, args.faction, args.travelmode, args.nosave,
-                           args.roundtrip, args.maxmu)
+    gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, beststats, args.faction, args.travelmode, args.nosave)
 
 
 if __name__ == "__main__":

@@ -14,10 +14,6 @@ from pathlib import Path
 import logging
 logger = logging.getLogger('fieldplan')
 
-CAPTUREAP = 500+(125*8)+250+(125*2)
-LINKAP = 313
-FIELDAP = 1250
-
 
 def setup():
     home = str(Path.home())
@@ -35,7 +31,7 @@ def setup():
     return build('sheets', 'v4', http=creds.authorize(Http()))
 
 
-def _get_portal_info_from_row(row):
+def _get_portal_info_from_row(row, hyperlinks=None):
     try:
         if not len(row) or not len(row[0].strip()):
             # Row starting with an empty cell ignored
@@ -60,18 +56,59 @@ def get_portals_from_sheet(service, spid):
     if spid.find('/') > 0:
         chunks = spid.split('/')
         spid = chunks[5]
-    # We only consider first 50 lines
-    srange = 'Portals!A1:B50'
+    # We only consider first 100 lines
+    srange = 'Portals!A1:B100'
     res = service.spreadsheets().values().get(
-        spreadsheetId=spid, range=srange).execute()
+        spreadsheetId=spid,
+        range=srange
+    ).execute()
     rows = res.get('values', [])
     portals = []
     logger.info('Grabbing the spreadsheet')
+    hyperlinks = None
+    # if the first row/column says #!iitc, then we parse the sheet
+    # as iitc portal listing copypaste
+    if rows[0][0] == '#!iitc':
+        # Grab hyperlink data
+        res = service.spreadsheets().get(
+            spreadsheetId=spid,
+            ranges=['Portals!B1:B100'],
+            fields="sheets/data/rowData/values/hyperlink",
+        ).execute()
+        hyperlinks = res['sheets'][0]['data'][0]['rowData']
+
+    at_row = 0
     for row in rows:
-        pinfo = _get_portal_info_from_row(row)
-        if pinfo is not None:
-            logger.info('Adding portal: %s', pinfo[0])
-            portals.append(pinfo)
+        if not len(row) or not len(row[0].strip()):
+            at_row += 1
+            continue
+        if row[0][0] == '#':
+            # Comment ignored
+            at_row += 1
+            continue
+        if row[1].find('pll=') < 0:
+            if hyperlinks is not None:
+                # Grab portal name and location from iitc paste
+                name = row[1]
+                url = hyperlinks[at_row]['values'][0]['hyperlink']
+                if url.find('pll=') < 0:
+                    logger.debug('hyperlink=%s', hyperlinks[at_row])
+                    logger.info('IITC row link does not look sane, ignoring')
+                    at_row += 1
+                    continue
+                logger.info('Adding portal from IITC paste: %s', name)
+                at_row += 1
+                portals.append([name, url])
+                continue
+            else:
+                logger.debug('link=%s', row[1])
+                logger.info('Portal link does not look sane, ignoring')
+                at_row += 1
+                continue
+        else:
+            logger.info('Adding portal: %s', row[0])
+            portals.append(row)
+            at_row += 1
 
     # Now do blockers
     srange = 'Blockers!A1:B50'
@@ -92,8 +129,7 @@ def get_portals_from_sheet(service, spid):
     return portals, blockers
 
 
-def write_workplan(service, spid, a, workplan, faction, travelmode='walking', nosave=False, roundtrip=False,
-                   maxmu=False):
+def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walking', nosave=False):
 
     if spid.find('/') > 0:
         chunks = spid.split('/')
@@ -132,14 +168,12 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
     for line in workplan:
         logger.debug('    %s', line)
 
+    logger.debug('stats: %s', stats)
+
     # Track which portals we've already captured
     # (easier than going through the list backwards)
     prev_p = None
     plan_at = 0
-    totaldist = 0
-    links = 0
-    fields = 0
-    totalap = CAPTUREAP * a.order()
 
     for p, q, f in workplan:
         plan_at += 1
@@ -171,26 +205,22 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
                 a.node[p]['pll'], travelmode
             )
             if prev_p is not None:
-                if links:
-                    logger.info('    total links: %d', links)
-                if fields:
-                    logger.info('    total fields: %d', fields)
-
                 dist = maxfield.getPortalDistance(prev_p, p)
+                duration = maxfield.getPortalTime(prev_p, p)
+
                 if dist > 40:
-                    totaldist += dist
                     if dist >= 500:
-                        nicedist = '%0.1f km' % (dist/float(1000))
+                        nicedist = '%0.1f km (%s min)' % ((dist/float(1000)), duration)
                     else:
                         nicedist = '%d m' % dist
-                    hyperlink = '=HYPERLINK("%s", "%s")' % (mapurl, nicedist)
+                    hyperlink = '=HYPERLINK("%s"; "%s")' % (mapurl, nicedist)
                     planrows.append((u'▼',))
                     planrows.append((travelmoji[travelmode], hyperlink))
-                    logger.info('-->Move to %s (%s)', a.node[p]['name'], nicedist)
+                    logger.info('-->Move to %s [%s]', a.node[p]['name'], nicedist)
                 else:
                     planrows.append((u'▼',))
             else:
-                hyperlink = '=HYPERLINK("%s", "map")' % mapurl
+                hyperlink = '=HYPERLINK("%s"; "map")' % mapurl
                 planrows.append((travelmoji[travelmode], hyperlink))
                 logger.info('-->Start at %s', a.node[p]['name'])
 
@@ -206,12 +236,14 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
                 continue
 
             if totalkeys:
-                logger.info('--|H: ensure %d keys (%d max)', ensurekeys, totalkeys)
                 if lastvisit:
+                    logger.info('--|H: ensure %d keys', totalkeys)
                     planrows.append(('H', 'ensure %d keys' % totalkeys))
                 elif ensurekeys:
+                    logger.info('--|H: ensure %d keys (%d max)', ensurekeys, totalkeys)
                     planrows.append(('H', 'ensure %d keys (%d max)' % (ensurekeys, totalkeys)))
                 else:
+                    logger.info('--|H: %d max keys needed', totalkeys)
                     planrows.append(('H', '%d max keys needed' % totalkeys))
 
             if lastvisit:
@@ -223,54 +255,44 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
 
         if q is not None:
             # Add links/fields
-            links += 1
-            totalap += LINKAP
-            action = 'L'
             if f:
-                fields += f
-                totalap += FIELDAP*f
                 action = 'F'
+            else:
+                action = 'L'
 
             planrows.append((action, u'▶%s' % a.node[q]['name']))
             logger.info('  \%s--> %s', action, a.node[q]['name'])
 
-    if links:
-        logger.info('    total links: %d', links)
-    if fields:
-        logger.info('    total fields: %d', fields)
-
-    totalkm = totaldist/float(1000)
+    totalkm = stats['dist']/float(1000)
     logger.info('Total workplan distance: %0.2f km', totalkm)
-    logger.info('Total AP: %s (%s without capturing)', totalap, totalap - (a.order()*CAPTUREAP))
+    logger.info('Total workplan play time: %s (%s %s)',
+                stats['nicetime'], stats['nicetraveltime'], travelmode)
+    logger.info('Total AP: %s (%s without capturing)', stats['ap'], stats['ap'] - (a.order()*maxfield.CAPTUREAP))
     if nosave:
         logger.info('Not saving spreadsheet per request.')
         return
 
-    title = 'Ingress: around %s (%s AP)' % (a.node[0]['name'], '{:,}'.format(totalap))
-    logger.info('Setting spreadsheet title: %s', title)
+    #title = 'Ingress: around %s (%s AP)' % (a.node[0]['name'], '{:,}'.format(totalap))
+    #logger.info('Setting spreadsheet title: %s', title)
 
     requests = list()
-    requests.append({
-        'updateSpreadsheetProperties': {
-            'properties': {
-                'title': title,
-                'locale': 'en_US',
-            },
-            'fields': 'title',
-        }
-    })
+    #requests.append({
+    #    'updateSpreadsheetProperties': {
+    #        'properties': {
+    #            'title': title,
+    #            'locale': 'en_US',
+    #        },
+    #        'fields': 'title',
+    #    }
+    #})
 
-    dtitle = 'From %s, %s' % (a.node[workplan[0][0]]['name'], travelmode)
-    if roundtrip:
-        dtitle += ', roundtrip'
-    if maxmu:
-        dtitle += ', max-MU'
-    stitle = '%s (%0.2f km)' % (dtitle, totalkm)
-    logger.info('Adding "%s" sheet with %d rows', stitle, len(workplan))
+    dtitle = '%s %s (%0.2fkm/%dP/%sAP)' % (travelmoji[travelmode], stats['nicetime'], totalkm,
+                                           a.order(), '{:,}'.format(stats['ap']))
+    logger.info('Adding "%s" sheet with %d actions', dtitle, len(workplan))
     requests.append({
         'addSheet': {
             'properties': {
-                'title': stitle,
+                'title': dtitle,
             }
         }
     })
@@ -288,7 +310,7 @@ def write_workplan(service, spid, a, workplan, faction, travelmode='walking', no
     updates = list()
 
     updates.append({
-        'range': '%s!A1:B%d' % (stitle, len(planrows)),
+        'range': '%s!A1:B%d' % (dtitle, len(planrows)),
         'majorDimension': 'ROWS',
         'values': planrows,
     })
