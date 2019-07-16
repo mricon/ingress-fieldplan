@@ -19,14 +19,14 @@ np.seterr(divide='ignore', invalid='ignore')
 logger = logging.getLogger('fieldplan')
 
 # version number
-_V_ = '3.1.0'
+_V_ = '3.2.0'
 
 
-def queue_job(a, ab, args, ready_queue):
+def queue_job(args, ready_queue):
     # When limiting the number of actions, we use this
     # counter to see how many portals out of the total
     # number provided we need to consider.
-    maxportals = a.order()
+    maxportals = maxfield.portal_graph.order()
     p_considered = maxportals
     is_subset = False
     # We just crank out plans until we are terminated
@@ -36,7 +36,7 @@ def queue_job(a, ab, args, ready_queue):
             time.sleep(0.1)
             continue
         if p_considered == maxportals and args.minportals is None:
-            b = a.copy()
+            b = maxfield.portal_graph.copy()
         else:
             b = nx.DiGraph()
             ct = 0
@@ -54,7 +54,7 @@ def queue_job(a, ab, args, ready_queue):
             if args.beginfirst:
                 subset[0] = 0
             for num in subset:
-                attrs = a.node[num]
+                attrs = maxfield.portal_graph.node[num]
                 b.add_node(ct, **attrs)
                 ct += 1
 
@@ -73,13 +73,20 @@ def queue_job(a, ab, args, ready_queue):
             ready_queue.put((False, None, None, None))
             continue
 
-        maxfield._current_graph = b
         for t in b.triangulation:
             t.markEdgesWithFields()
 
+        maxfield.extendGraphWithWaypoints(b)
+        maxfield.active_graph = b
+
         maxfield.improveEdgeOrder(b)
         linkplan = maxfield.makeLinkPlan(b)
-        workplan = maxfield.makeWorkPlan(linkplan, b, ab, args.roundtrip, args.beginfirst, is_subset)
+        workplan = maxfield.makeWorkPlan(b, linkplan, is_subset)
+
+        if workplan is None:
+            ready_queue.put((False, None, None, None))
+            continue
+
         stats = maxfield.getWorkplanStats(b, workplan, cooling=args.cooling)
 
         if args.maxtime is not None:
@@ -119,10 +126,6 @@ def main():
                         help='The Google Spreadsheet ID with portal definitions.')
     parser.add_argument('-n', '--nosave', action='store_true', default=False,
                         help='Do not attempt to save the spreadsheet, just calculate the plan.')
-    parser.add_argument('-r', '--roundtrip', action='store_true', default=False,
-                        help='Make sure the plan starts and ends at the same portal (may be less efficient).')
-    parser.add_argument('-b', '--beginfirst', action='store_true', default=False,
-                        help='Begin capture with the first portal in the spreadsheet (may be less efficient).')
     parser.add_argument('-p', '--plots', default=None,
                         help='Save step-by-step PNGs of the workplan into this directory.')
     parser.add_argument('--plotdpi', default=96, type=int,
@@ -135,9 +138,6 @@ def main():
                         help='What kind of heatsinks to assume (hs, rhs, vrhs, none, idkfa)')
     parser.add_argument('-u', '--maxmu', action='store_true', default=False,
                         help='Find a plan with highest MU coverage instead of best AP')
-    parser.add_argument('--minportals', type=int, default=None,
-                        help=('Minimum number of portals to consider when reducing portal count '
-                              '(default: consider all portals'))
     parser.add_argument('-t', '--maxtime', default=None, type=int,
                         help='Ignore plans that would take longer than this (in minutes)')
     parser.add_argument('--mintime', default=None, type=int,
@@ -150,7 +150,15 @@ def main():
                         help='Add debug information to the logfile')
     parser.add_argument('-q', '--quiet', action='store_true', default=False,
                         help='Only output errors to the stdout')
+    # Obsolete options
+    parser.add_argument('-b', '--beginfirst', action='store_true', default=False,
+                        help='(Obsolete, use waypoints instead)')
+    parser.add_argument('-r', '--roundtrip', action='store_true', default=False,
+                        help='(Obsolete, use waypoints instead)')
     args = parser.parse_args()
+
+    if args.beginfirst or args.roundtrip:
+        parser.error('Options -b and -r are obsolete. Use waypoints instead (see README).')
 
     if args.iterations < 0:
         parser.error('Number of extra samples should be positive')
@@ -189,24 +197,19 @@ def main():
 
     gs = gsheets.setup()
 
-    portals, blockers = gsheets.get_portals_from_sheet(gs, args.sheetid)
-    logger.info('Considering %d portals', len(portals))
+    portals, waypoints = gsheets.get_portals_from_sheet(gs, args.sheetid)
+    logger.info('Considering %d portals and %s waypoints', len(portals), len(waypoints))
 
     if len(portals) < 3:
         logger.critical('Must have more than 2 portals!')
         sys.exit(1)
 
-    a = maxfield.populateGraph(portals)
+    maxfield.populateGraphs(portals, waypoints)
 
-    ab = None
-    if blockers:
-        ab = maxfield.populateGraph(blockers)
+    maxfield.genDistanceMatrix(args.gmapskey, args.travelmode)
 
-    # Use a copy, because we concat ab to a for blockers distances
-    maxfield.genDistanceMatrix(a.copy(), ab, args.gmapskey, args.travelmode)
+    (bestgraph, bestplan) = maxfield.loadCache(args.travelmode, args.maxmu, args.maxtime)
 
-    (bestgraph, bestplan) = maxfield.loadCache(a, ab, args.travelmode,
-                                               args.beginfirst, args.roundtrip, args.maxmu, args.maxtime)
     if bestgraph is not None:
         beststats = maxfield.getWorkplanStats(bestgraph, bestplan)
         bestdist = beststats['dist']
@@ -247,7 +250,7 @@ def main():
     processes = list()
     for i in range(args.maxcpus):
         logger.debug('Starting process %s', i)
-        p = mp.Process(target=queue_job, args=(a, ab, args, ready_queue))
+        p = mp.Process(target=queue_job, args=(args, ready_queue))
         processes.append(p)
         p.start()
     logger.info('Started %s worker processes', len(processes))
@@ -261,6 +264,7 @@ def main():
                 break
 
             success, b, workplan, stats = ready_queue.get()
+
             if not success:
                 failcount += 1
                 continue
@@ -324,10 +328,9 @@ def main():
         logger.critical('Could not find a solution for this list of portals.')
         sys.exit(1)
 
-    maxfield._current_graph = bestgraph
+    maxfield.active_graph = bestgraph
 
-    maxfield.saveCache(bestgraph, ab, bestplan, args.travelmode,
-                       args.beginfirst, args.roundtrip, args.maxmu, args.maxtime)
+    maxfield.saveCache(bestgraph, bestplan, args.travelmode, args.maxmu, args.maxtime)
 
     if args.plots:
         animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction, args.plotdpi)

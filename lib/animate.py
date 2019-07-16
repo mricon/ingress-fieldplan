@@ -63,6 +63,10 @@ def make_png_steps(a, workplan, outdir, faction, plotdpi=96):
     seen_p = list()
     for p, q, f in workplan:
         if p != prev_p:
+            if 'special' in a.node[p]:
+                special = a.node[p]['special']
+            else:
+                special = None
             torm = list()
             # Colour this node captured
             p_coords = np.array(a.node[p]['xy']).T
@@ -74,8 +78,10 @@ def make_png_steps(a, workplan, outdir, faction, plotdpi=96):
                 # Show travel edge
                 dist = maxfield.getPortalDistance(prev_p, p)
                 torm = draw_edge(a, prev_p, p, ax, 'm:', directional=True)
-                if 'blocker' in a.node[p]:
+                if special == '_w_blocker':
                     action = 'Destroy blocker'
+                elif special in ('_w_start', '_w_end'):
+                    action = 'Travel to waypoint'
                 else:
                     action = 'Capture'
 

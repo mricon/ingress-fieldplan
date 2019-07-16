@@ -98,12 +98,11 @@ If it didn't crash horribly, then you're in business!
 1. Go to the Intel Map and find the portals you want to field
 2. A good number is around 15 portals, good for about 1 hour of gameplay plus getting around
 3. Start a new Google Spreadsheet
-4. Rename the first sheet "Portals"
-5. Column A is portal names
-6. Column B is for Intel Map portal links
-7. To get a portal link, click on the portal, then click on the "Link" button at the top-right
-8. We only need pll=x,y bits, but easiest is to copy-paste the whole URL
-9. Blank rows or rows where the value in column A starts with "#" will be ignored
+4. Column A is portal names
+5. Column B is for Intel Map portal links
+6. To get a portal link, click on the portal, then click on the "Link" button at the top-right
+7. We only need pll=x,y bits, but easiest is to copy-paste the whole URL
+8. Blank rows will be ignored
 
 Once you have all the portals entered, copy the spreadsheet URL and run the command:
 
@@ -133,8 +132,8 @@ step after each random plan to fix the worst inefficiencies, so the results
 after each iteration are already tweaked. In my personal experience using it,
 I've found 10,000 a good number of iterations to generate decent plans.
 
-Note: the actual number of iterations is actually higher, because we reset the
-count after each new best plan is found. It's possible to find a new best plan
+*Note:* the actual number of iterations is actually higher, because we reset the
+counter after each new best plan is found. It's possible to find a new best plan
 on iteration 9,999 and thus reset the counter back to 0 again.
 
 Generally:
@@ -142,7 +141,7 @@ Generally:
 - 10 iterations: probably bad plans
 - 1,000 iterations: okayish plans
 - 10,000 iterations: decent plans
-- 25,000 iterations: very good plans
+- 20,000 iterations: very good plans
 - 100,000 iterations: total overkill
 
 Since iterations are largely random, it's entirely possible to find the best
@@ -155,7 +154,7 @@ The optimization steps will try to reduce how much you travel between portals,
 so it's possible that the final plan will require crazy amounts of keys (see
 more on that below). If you're in an area where you've never been before and
 want to make sure that you don't need too many keys from each portal, you can
-make sure by passing the -k switch.
+make sure by passing the `-k` switch.
 
 ## Getting lots of keys from portals
 
@@ -193,39 +192,98 @@ Note, that the plan instructions will always tell you how many keys you need
 for the portal before you leave. Often, even if a portal requires 5-6 keys,
 you may not need to get them all at once.
 
-## Round-trip (-r) and Begin-First (-b)
+## Start and End waypoints
 
-The software will try to find the most efficient capture and field strategy
-but it may not result in the most convenient plan, because you may want to
-start and end at a specific portal -- for example, if you are visiting a
-remote part of town and want your walk to begin near the parking lot/transit
-stop and end there, too.
+You will probably be planning your field ops either from home, on the way
+from home to work/school, or from a parking/transit stop location. To generate
+plans that are more efficient with those locations, you should add
+them as waypoints to your spreadsheet.
 
-- -r will create roundtrip plans, using the most efficient starting portal
-- -b will use the first portal in the spreadsheet as the starting portal
-- -r -b will do both of the above, though the last step will usually be only
-    the return trip without any links or fields (but it's useful for total
-    distance calculation)
+- First, find the waypoint location on the intel map and zoom in as far in
+  as possible for the most accurate result.
+- With your waypoint at the center of the map, click "Link" and copy the
+  URL in the pop-up box (just like with portal URLs).
+- Use special name indicators at the start of the portal names:
+
+  - `#!s Location Name` for your start waypoint
+  - `#!e Location Name` for your end waypoint
+
+For example:
+
+  - Column A1: `#!s My Home`
+  - Column B1: `https://intel.ingress.com/intel?ll=45.498803,-73.598872&z=21`
+  - Column A2: `#!e My School`
+  - Column B2: `https://intel.ingress.com/intel?ll=45.504427,-73.574309&z=21`
+  
+Waypoints can be either at the start or at the end of the portal list.
+
+## Blocker waypoints
+
+You can also add portals you need to visit to destroy blockers by using the
+same logic as with start/end waypoints. Use the `#!b Portal Name` indicator
+in the left column to mark that a portal is a blocker and not part of the
+fielding plan.
+
+*Note:* The software has no idea where the blocking links are, so you will
+need to review the plan to make sure that you are not throwing early links
+before destroying the blockers that would be in the way.
     
-## Highest MU per distance travelled ratio (-u)
+## Prioritizing MU capture (-u)
 
-By default, fieldplan will try to find the shortest plan, but using the
--u switch you can tell it to consider field sizes as well, in an attempt to
-find plans that would also give you a high MU capture. This may result in
-less efficient plans, but could be a worthy trade-off if you are covering
-a larger territory (e.g. biking or driving) and want to maximize how many
-MUs you cover. Obviously, the software has no way of knowing the actual MU
-density, so it will simply give higher priority to larger fields.
+By default, fieldplan will try to maximize AP per minute of gameplay, but 
+using the `-u` switch you can tell it to consider field sizes as well, in an
+attempt to find plans that would also give you highest area capture per
+minute of gameplay. 
+
+*Note:* the software has no way of knowing the actual in-game MU density,
+so it will simply give higher priority to larger fields.
 
 ## Generating plots
 
-Passing the -p switch will generate a set of step-by-step PNG files that
+Passing the `-p` switch will generate a set of step-by-step PNG files that
 allows you to preview the plan in action. Here's what it is for the Biking
 example above:
 
 ![Plot example](https://raw.githubusercontent.com/mricon/ingress-fieldplan/master/screenshots/plotting.gif "Plot example")
 
 You may need to install python-tkinter for it to work.
+
+## I have an hour to play, find me a plan that works
+
+*Note: This is an experimental feature.*
+
+This probably happened to you -- you found an area with lots of uncaptured
+portals, but you only have a limited amount of time to play. You can give
+Fieldplan that large list of portals and ask it to find you a plan that would
+give you maximum AP (or MU, with `-u`) within the time constraints specified.
+The software will try various subsets of portals until it finds something that
+satisfies the parameters.
+
+For example, there's a historical site with 25 portals, but fielding them all
+would take over 3 hours:
+
+- Create the spreadsheet with all 25 portals
+- Run fieldplan with `--maxtime 130 --mintime 110` flags
+
+Fieldplan will try to find the most efficient plan that will take roughly
+2 hours to execute.
+
+*Note:* This is an experimental feature and currently requires significantly
+more iterations to find efficient plans, so run it with `-i 50000` and higher.
+
+### Cooling
+
+While estimating the time to play, the software will assume that you will get
+1.5 keys per hack and use Rare Heat Sinks to speed up portal cooldown.
+If you only have regular Heat Sinks, you can specify that with `--cooling hs`.
+
+Other options are:
+
+- `rhs`: Rare Heat Sink (default)
+- `hs`: Heat Sink
+- `vrhs`: Very Rare Heat Sink
+- `none`: don't use Heat Sinks at all
+- `idkfa`: you have all the keys and hack/cooldown times should not be counted
 
 ## If something is not working
 

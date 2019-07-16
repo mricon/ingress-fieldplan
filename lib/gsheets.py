@@ -10,6 +10,7 @@ from oauth2client import file
 from lib import maxfield
 
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 import logging
 logger = logging.getLogger('fieldplan')
@@ -31,24 +32,15 @@ def setup():
     return build('sheets', 'v4', http=creds.authorize(Http()))
 
 
-def _get_portal_info_from_row(row, hyperlinks=None):
-    try:
-        if not len(row) or not len(row[0].strip()):
-            # Row starting with an empty cell ignored
-            return None
-        if row[0][0] == '#':
-            # Comment ignored
-            return None
-        if row[1].find('pll=') < 0:
-            logger.debug('link=%s', row[1])
-            logger.info('Portal link does not look sane, ignoring')
-            return None
-
-        return row
-
-    except IndexError:
-        logger.info('Bad portal row: %s', row)
+def _get_qp_from_url(url, qp='pll'):
+    p_url = urlparse(url)
+    q_parts = parse_qs(p_url.query)
+    if qp not in q_parts:
+        logger.debug('link=%s', url)
+        logger.info('Portal link does not look sane, ignoring')
         return None
+
+    return q_parts[qp][0]
 
 
 def get_portals_from_sheet(service, spid):
@@ -57,13 +49,14 @@ def get_portals_from_sheet(service, spid):
         chunks = spid.split('/')
         spid = chunks[5]
     # We only consider first 100 lines
-    srange = 'Portals!A1:B100'
+    srange = 'A1:B100'
     res = service.spreadsheets().values().get(
         spreadsheetId=spid,
         range=srange
     ).execute()
     rows = res.get('values', [])
     portals = []
+    waypoints = []
     logger.info('Grabbing the spreadsheet')
     hyperlinks = None
     # if the first row/column says #!iitc, then we parse the sheet
@@ -72,17 +65,52 @@ def get_portals_from_sheet(service, spid):
         # Grab hyperlink data
         res = service.spreadsheets().get(
             spreadsheetId=spid,
-            ranges=['Portals!B1:B100'],
+            ranges=['B1:B100'],
             fields="sheets/data/rowData/values/hyperlink",
         ).execute()
         hyperlinks = res['sheets'][0]['data'][0]['rowData']
 
     at_row = 0
+    startpoint_loc = None
+    endpoint_loc = None
     for row in rows:
+        logger.debug('at_row=%s', at_row)
         if not len(row) or not len(row[0].strip()):
             at_row += 1
             continue
         if row[0][0] == '#':
+            # Is the next one a bang?
+            if len(row[0]) > 3 and row[0][1] == '!':
+                # Is it a waypoint?
+                if row[0][2] == 's' and row[1].find('ll='):
+                    # Starting waypoint
+                    if startpoint_loc is not None:
+                        logger.critical('Multiple start waypoints found!')
+                    name = row[0][3:].lstrip()
+                    coords = _get_qp_from_url(row[1], qp='ll')
+                    waypoints.append((name, coords, '_w_start'))
+                    logger.info('Adding start waypoint: %s', name)
+                    at_row += 1
+                    continue
+                if row[0][2] == 'e' and row[1].find('ll='):
+                    # Ending waypoint
+                    if endpoint_loc is not None:
+                        logger.critical('Multiple end waypoints found!')
+                    name = row[0][3:].lstrip()
+                    coords = _get_qp_from_url(row[1], qp='ll')
+                    waypoints.append((name, coords, '_w_end'))
+                    logger.info('Adding end waypoint: %s', name)
+                    endpoint_loc = len(waypoints)-1
+                    at_row += 1
+                    continue
+                if row[0][2] == 'b' and row[1].find('pll='):
+                    # Blocker waypoint
+                    name = row[0][3:].lstrip()
+                    coords = _get_qp_from_url(row[1])
+                    waypoints.append((name, coords, '_w_blocker'))
+                    logger.info('Adding blocker waypoint: %s', name)
+                    at_row += 1
+                    continue
             # Comment ignored
             at_row += 1
             continue
@@ -98,7 +126,8 @@ def get_portals_from_sheet(service, spid):
                     continue
                 logger.info('Adding portal from IITC paste: %s', name)
                 at_row += 1
-                portals.append([name, url])
+                coords = _get_qp_from_url(url)
+                portals.append([name, coords])
                 continue
             else:
                 logger.debug('link=%s', row[1])
@@ -107,26 +136,15 @@ def get_portals_from_sheet(service, spid):
                 continue
         else:
             logger.info('Adding portal: %s', row[0])
-            portals.append(row)
+            portals.append((row[0], _get_qp_from_url(row[1])))
             at_row += 1
 
-    # Now do blockers
-    srange = 'Blockers!A1:B50'
-    blockers = []
-    # There may not be any
-    try:
-        res = service.spreadsheets().values().get(
-            spreadsheetId=spid, range=srange).execute()
-        rows = res.get('values', [])
-        for row in rows:
-            pinfo = _get_portal_info_from_row(row)
-            if pinfo is not None:
-                logger.info('Adding blocker: %s', pinfo[0])
-                blockers.append(pinfo)
-    except:
-        pass
+    # make sure end waypoint is always last in the waypoint list
+    if endpoint_loc is not None and endpoint_loc != len(waypoints)-1:
+        _ep = waypoints.pop(endpoint_loc)
+        waypoints.append(_ep)
 
-    return portals, blockers
+    return portals, waypoints
 
 
 def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walking', nosave=False):
@@ -158,9 +176,6 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     for line in a.linkplan:
         logger.debug('    %s: %s -> %s', line, a.node[line[0]]['name'], a.node[line[1]]['name'])
     logger.debug('    len: %s', len(a.linkplan))
-    logger.debug('clusters:')
-    for line in a.clusters:
-        logger.debug('    %s', line)
     logger.debug('captureplan:')
     for line in a.captureplan:
         logger.debug('    %s: %s', line, a.node[line]['name'])
@@ -204,6 +219,11 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
             mapurl = 'https://www.google.com/maps/dir/?api=1&destination=%s&travelmode=%s' % (
                 a.node[p]['pll'], travelmode
             )
+            if 'special' in a.node[p]:
+                special = a.node[p]['special']
+            else:
+                special = None
+
             if prev_p is not None:
                 dist = maxfield.getPortalDistance(prev_p, p)
                 duration = maxfield.getPortalTime(prev_p, p)
@@ -225,10 +245,17 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
                 logger.info('-->Start at %s', a.node[p]['name'])
 
             logger.info('--|At %s', a.node[p]['name'])
+            # Are we at a waypoint?
+            if special in ('_w_start', '_w_end'):
+                planrows.append(('W', a.node[p]['name']))
+                # Nothing else here
+                prev_p = p
+                continue
+
             planrows.append(('P', a.node[p]['name']))
 
             # Are we at a blocker?
-            if 'blocker' in a.node[p]:
+            if special == '_w_blocker':
                 planrows.append(('X', 'destroy blocker'))
                 logger.info('--|X: destroy blocker')
                 # Nothing else here
@@ -261,7 +288,7 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
                 action = 'L'
 
             planrows.append((action, u'▶%s' % a.node[q]['name']))
-            logger.info('  \%s--> %s', action, a.node[q]['name'])
+            logger.info('  \\%s--> %s', action, a.node[q]['name'])
 
     totalkm = stats['dist']/float(1000)
     logger.info('Total workplan distance: %0.2f km', totalkm)
@@ -330,6 +357,7 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
         ('S', 0.9, 0.7, 0.9),  # Shield
         ('T', 0.9, 0.9, 0.9),  # Travel
         ('P', 0.6, 0.6, 0.6),  # Portal
+        ('W', 0.6, 0.6, 0.6),  # Waypoint
         ('X', 1.0, 0.6, 0.6),  # Blocker
     ]
     if faction == 'res':

@@ -39,14 +39,19 @@ cooltime = {
 
 logger = logging.getLogger('fieldplan')
 
-_master_graph = None
-_current_graph = None
+combined_graph = None
+portal_graph = None
+waypoint_graph = None
+active_graph = None
+_manager = None
+_routing = None
 
 _capture_cache = dict()
 _dist_matrix = list()
 _time_matrix = list()
 _direct_dist_matrix = list()
 _area_cache = dict()
+_ortools_routing = None
 
 # in metres per minute, only used in the absence of Google Maps API
 travel_speed = {
@@ -64,7 +69,7 @@ def getCacheDir():
     return cachedir
 
 
-def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
+def genDistanceMatrix(gmapskey=None, gmapsmode='walking'):
     global _dist_matrix
     global _direct_dist_matrix
 
@@ -93,15 +98,7 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
     else:
         logger.info('Generating the distance matrix')
 
-    if ab is not None:
-        num = a.order()
-        logger.debug('Adding %s blockers to the matrix', ab.order())
-        for i in range(ab.order()):
-            attrs = ab.node[i]
-            a.add_node(num, **attrs)
-            a.node[num]['blocker'] = True
-            num += 1
-
+    a = combined_graph.copy()
     n = a.order()
     logger.debug('n=%s', n)
 
@@ -160,35 +157,66 @@ def genDistanceMatrix(a, ab, gmapskey=None, gmapsmode='walking'):
 
 
 def getPortalDistance(p1, p2, direct=False):
-    mp1 = _current_graph.node[p1]['pos']
-    mp2 = _current_graph.node[p2]['pos']
+    mp1 = active_graph.node[p1]['pos']
+    mp2 = active_graph.node[p2]['pos']
     if direct:
-        logger.debug('%s->%s=%s (direct)', _master_graph.node[mp1]['name'],
-                     _master_graph.node[mp2]['name'], _direct_dist_matrix[mp1][mp2])
+        logger.debug('%s->%s=%s (direct)', combined_graph.node[mp1]['name'],
+                     combined_graph.node[mp2]['name'], _direct_dist_matrix[mp1][mp2])
         return _direct_dist_matrix[mp1][mp2]
-    logger.debug('%s->%s=%s (gmap)', _master_graph.node[mp1]['name'],
-                 _master_graph.node[mp2]['name'], _dist_matrix[mp1][mp2])
+    logger.debug('%s->%s=%s (gmap)', combined_graph.node[mp1]['name'],
+                 combined_graph.node[mp2]['name'], _dist_matrix[mp1][mp2])
     return _dist_matrix[mp1][mp2]
 
 
 def getPortalTime(p1, p2):
-    mp1 = _current_graph.node[p1]['pos']
-    mp2 = _current_graph.node[p2]['pos']
-    logger.debug('%s->%s=%s seconds (gmap)', _master_graph.node[mp1]['name'],
-                 _master_graph.node[mp2]['name'], _time_matrix[mp1][mp2])
+    mp1 = active_graph.node[p1]['pos']
+    mp2 = active_graph.node[p2]['pos']
+    logger.debug('%s->%s=%s minutes (gmap)', combined_graph.node[mp1]['name'],
+                 combined_graph.node[mp2]['name'], _time_matrix[mp1][mp2])
     return int(_time_matrix[mp1][mp2])
+
+
+def populateGraphs(portals, waypoints):
+    global combined_graph
+    global portal_graph
+    global waypoint_graph
+    global active_graph
+    a = populateGraph(portals)
+    # a graph with just portals
+    portal_graph = a
+    # Make a master graph that contains both portals and waypoints
+    combined_graph = a.copy()
+    if waypoints:
+        waypoint_graph = populateGraph(waypoints)
+        extendGraphWithWaypoints(combined_graph)
+
+
+def extendGraphWithWaypoints(a):
+    if waypoint_graph is None:
+        return
+    master_num = portal_graph.order()
+    num = a.order()
+    for i in range(waypoint_graph.order()):
+        attrs = waypoint_graph.node[i]
+        a.add_node(num, **attrs)
+        a.node[num]['pos'] = master_num
+        num += 1
+        master_num += 1
 
 
 def populateGraph(portals):
     a = nx.DiGraph()
     locs = []
 
-    for num, portal in enumerate(portals):
+    for num, row in enumerate(portals):
         a.add_node(num)
-        a.node[num]['name'] = portal[0]
-        coords = (portal[1].split('pll='))
-        coord_parts = coords[1].split(',')
-        a.node[num]['pll'] = '%s,%s' % (coord_parts[0], coord_parts[1])
+        a.node[num]['name'] = row[0]
+        coord_parts = row[1].split(',')
+        a.node[num]['pll'] = row[1]
+        if len(row) > 2:
+            a.node[num]['special'] = row[2]
+        else:
+            a.node[num]['special'] = None
         lat = int(float(coord_parts[0]) * 1.e6)
         lon = int(float(coord_parts[1]) * 1.e6)
         locs.append(np.array([lat, lon], dtype=float))
@@ -208,12 +236,6 @@ def populateGraph(portals):
         a.node[i]['xyz'] = xyz[i]
         a.node[i]['xy'] = xy[i]
 
-    # Set it for distance/area calculation purposes
-    global _master_graph
-    global _current_graph
-    _master_graph = a.copy()
-    _current_graph = _master_graph
-
     return a
 
 
@@ -227,95 +249,97 @@ def makeLinkPlan(a):
     return linkplan
 
 
-def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False, is_subset=False):
+def makeWorkPlan(a, linkplan, is_subset=False):
+    global active_graph
     global _capture_cache
 
-    # make a linkplan first
-    # Add blockers we need to destroy
+    w_start = None
+    w_end = None
+
     all_p = list(range(a.order()))
-    if ab is not None:
-        num = a.order()
-        logger.debug('Adding %s blockers to the plan', ab.order())
-        for i in range(ab.order()):
-            attrs = ab.node[i]
-            a.add_node(num, **attrs)
-            a.node[num]['blocker'] = True
-            all_p.append(num)
-            num += 1
+    for i in range(a.order()):
+        # skip non-special nodes
+        if 'special' not in a.node[i]:
+            continue
+        # Is it a start enpoint?
+        if a.node[i]['special'] == '_w_start':
+            w_start = i
+        elif a.node[i]['special'] == '_w_end':
+            w_end = i
 
-    logger.debug('roundtrip=%s', roundtrip)
-    logger.debug('beginfirst=%s', beginfirst)
+    if w_end is not None:
+        # Remove last item from all_p
+        all_p.pop()
 
-    startp = linkplan[0][0]
-    cachekey = list()
+    if w_start is None:
+        # Find the portal that's furthest away from the starting portal
+        maxdist = None
+        for i in range(a.order()):
+            # Don't consider the end waypoint
+            if w_end is not None and i == w_end:
+                continue
+            dist = getPortalDistance(0, i)
+            if maxdist is None or dist > maxdist:
+                w_start = i
+                maxdist = dist
+
+        logger.debug('Furthest from %s is %s', a.node[0]['name'], a.node[w_start]['name'])
+
+    # It would be nice to use ortools constraint-solver for pickup and deliveries,
+    # but it mostly segfaults for me, so use the TSP solver until ortools stops sucking
+    # seen_portals = list()
+    # for p, q, f in linkplan:
+    #     if q not in seen_portals:
+    #         order_constraints.append([q, p])
+    #     seen_portals.append(p)
+    cachekey = [w_start, linkplan[0][0]]
     if is_subset:
         for n in range(a.order()):
             cachekey.append(a.node[n]['pos'])
-    if beginfirst:
-        endp = 0
-        cachekey = tuple(cachekey + [a.node[startp]['pos']])
-    elif roundtrip:
-        endp = linkplan[-1][0]
-        cachekey = tuple(cachekey + [a.node[startp]['pos'], a.node[endp]['pos']])
-    else:
-        cachekey = tuple(cachekey + [a.node[startp]['pos']])
-        endp = startp
+
+    cachekey = tuple(cachekey)
+    logger.debug('cachekey=%s', cachekey)
 
     if cachekey not in _capture_cache:
-        if not (roundtrip or beginfirst):
-            # Find the portal that's furthest away from the starting portal
-            maxdist = getPortalDistance(startp, endp)
-            for i in all_p:
-                if i in (startp, endp):
-                    continue
-                dist = getPortalDistance(startp, i)
-                if dist > maxdist:
-                    endp = i
-                    maxdist = dist
+        logger.debug('Capture cache miss, starting ortools calculation')
+        manager = pywrapcp.RoutingIndexManager(len(all_p), 1, w_start)
+        routing = pywrapcp.RoutingModel(manager)
 
-            logger.debug('Furthest from %s is %s', a.node[startp]['name'], a.node[endp]['name'])
+        def distance_callback(from_index, to_index):
+            from_node = manager.IndexToNode(from_index)
+            to_node = manager.IndexToNode(to_index)
+            return getPortalTime(from_node, to_node)
 
-        routing = pywrapcp.RoutingModel(len(all_p), 1, [endp], [startp])
+        transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
-        routing.SetArcCostEvaluatorOfAllVehicles(getPortalTime)
-        search_parameters = pywrapcp.RoutingModel.DefaultSearchParameters()
+        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
         search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
-
+            routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC
+        )
+        logger.debug('Starting solver')
         assignment = routing.SolveWithParameters(search_parameters)
+        logger.debug('Ended solver')
+
+        if not assignment:
+            logger.debug('Could not solve for these constraints, ignoring plan')
+            _capture_cache[cachekey] = None
+            return None
 
         index = routing.Start(0)
         dist_ordered = list()
         while not routing.IsEnd(index):
-            node = routing.IndexToNode(index)
+            node = manager.IndexToNode(index)
             dist_ordered.append(node)
             index = assignment.Value(routing.NextVar(index))
 
-        dist_ordered.append(routing.IndexToNode(index))
-        dist_ordered.remove(startp)
-        # Find clusters that are within 5 min travel of each-other
-        # We shuffle them later in hopes that it gives us a more efficient
-        # capture/link sequence.
-        clusters = list()
-        cluster = [dist_ordered[0]]
-        for p in dist_ordered[1:]:
-            if getPortalTime(cluster[0], p) <= 5:
-                cluster.append(p)
-                continue
-            clusters.append(cluster)
-            cluster = [p]
-
-        clusters.append(cluster)
-        _capture_cache[cachekey] = clusters
+        _capture_cache[cachekey] = dist_ordered
     else:
-        clusters = _capture_cache[cachekey]
-
-    a.clusters = clusters
-    dist_ordered = list()
-    for cluster in clusters:
-        if len(cluster) > 1:
-            shuffle(cluster)
-        dist_ordered.extend(cluster)
+        logger.debug('Capture cache hit')
+        if _capture_cache[cachekey] is None:
+            logger.debug('Known unsolvable, ignoring')
+            return None
+        dist_ordered = _capture_cache[cachekey]
 
     a.captureplan = dist_ordered
 
@@ -335,7 +359,7 @@ def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False, is_sub
                 # We're coming back to it before linking to it, so don't
                 # capture it separately
                 a.fixes.append('rpost: removed useless capture of %s before (%s, %s, %s)' % (
-                    a.node[p]['name'], lp, lq, lf))
+                               a.node[p]['name'], lp, lq, lf))
                 req_capture = False
                 break
 
@@ -374,17 +398,12 @@ def makeWorkPlan(linkplan, a, ab=None, roundtrip=False, beginfirst=False, is_sub
 
             p_captured.append(p)
 
-        elif beginfirst and not len(workplan):
-            # Force capture of first portal anyway when beginfirst
-            workplan.append((p, None, 0))
-            p_captured.append(p)
-
     workplan.extend(linkplan)
     workplan = fixPingPong(a, workplan)
-    if beginfirst and roundtrip:
-        if workplan[-1][0] != workplan[0][0]:
-            logger.debug('Appending start portal to the end of plan for beginfirst+roundtrip')
-            workplan.append((workplan[0][0], None, 0))
+    if w_end is not None:
+        logger.debug('Adding end waypoint to the workplan')
+        workplan.append((w_end, None, 0))
+
     return workplan
 
 
@@ -400,6 +419,7 @@ def getWorkplanStats(a, workplan, cooling='rhs'):
     prev_p = None
     plan_at = 0
     for p, q, f in workplan:
+        mp = combined_graph.node[p]['pos']
         plan_at += 1
 
         # Are we at a different location than the previous portal?
@@ -438,7 +458,7 @@ def getWorkplanStats(a, workplan, cooling='rhs'):
                     totaldist += dist
 
             # Are we at a blocker?
-            if 'blocker' in a.node[p]:
+            if 'special' in combined_graph.node[mp] and combined_graph.node[mp]['special'] == '_w_blocker':
                 # assume it takes 3 minutes to destroy a blocker
                 totaltime += 3
                 prev_p = p
@@ -785,23 +805,16 @@ def maxFields(a):
     return True
 
 
-def genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit):
+def genCacheKey(mode, maxmu, timelimit):
     plls = list()
+    a = combined_graph
     for m in range(a.order()):
         plls.append(a.node[m]['pll'])
-    if ab is not None:
-        for m in range(ab.order()):
-            if ab.node[m]['pll'] not in plls:
-                plls.append(ab.node[m]['pll'])
     h = hashlib.sha1()
     for pll in plls:
         h.update(pll.encode('utf-8'))
     phash = h.hexdigest()
     cachekey = mode
-    if beginfirst:
-        cachekey += '+beginfirst'
-    if roundtrip:
-        cachekey += '+roundtrip'
     if maxmu:
         cachekey += '+maxmu'
     if timelimit:
@@ -811,25 +824,27 @@ def genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit):
     return cachekey
 
 
-def saveCache(a, ab, bestplan, mode, beginfirst, roundtrip, maxmu, timelimit):
+def saveCache(bestgraph, bestplan, mode, maxmu, timelimit):
     # let's cache processing results for the same portals, just so
     # we can "add more cycles" to existing best plans
     # We use portal pll coordinates to generate the cache file key
     # and dump a in there.
-    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit)
+    cachekey = genCacheKey(mode, maxmu, timelimit)
     cachedir = getCacheDir()
     plancachedir = os.path.join(cachedir, 'plans')
     Path(plancachedir).mkdir(parents=True, exist_ok=True)
     cachefile = os.path.join(plancachedir, cachekey)
     wc = shelve.open(cachefile, 'c')
     wc['bestplan'] = bestplan
-    wc['bestgraph'] = a
+    wc['bestgraph'] = bestgraph
     logger.info('Saved plan cache in %s', cachefile)
     wc.close()
 
 
-def loadCache(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit):
-    cachekey = genCacheKey(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit)
+def loadCache(mode, maxmu, timelimit):
+    global active_graph
+
+    cachekey = genCacheKey(mode, maxmu, timelimit)
     cachedir = getCacheDir()
     plancachedir = os.path.join(cachedir, 'plans')
     cachefile = os.path.join(plancachedir, cachekey)
@@ -844,6 +859,7 @@ def loadCache(a, ab, mode, beginfirst, roundtrip, maxmu, timelimit):
     except:
         pass
 
+    active_graph = bestgraph
     return bestgraph, bestplan
 
 
