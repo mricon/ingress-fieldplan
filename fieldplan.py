@@ -31,24 +31,13 @@ def queue_job(args, ready_queue):
     is_subset = False
     # We just crank out plans until we are terminated
     while True:
-        if ready_queue.qsize() > 10:
-            # Queue is getting full, so do an idle loop
-            time.sleep(0.1)
-            continue
-        if p_considered == maxportals and args.minportals is None:
+        if p_considered == maxportals:
             b = maxfield.portal_graph.copy()
         else:
             b = nx.DiGraph()
             ct = 0
             is_subset = True
-            if args.minportals is not None:
-                # Play with the number of portals to consider to arrive at the best
-                # MU per distance travelled number. Randomly select a number of portals
-                # between 3 and p_considered
-                subset = random.sample(range(maxportals),
-                                       random.randint(args.minportals, p_considered))
-            else:
-                subset = random.sample(range(maxportals), p_considered)
+            subset = random.sample(range(maxportals), p_considered)
 
             subset.sort()
             if args.beginfirst:
@@ -246,7 +235,7 @@ def main():
     seenplans = list()
 
     # set up multiprocessing
-    ready_queue = mp.Queue()
+    ready_queue = mp.Queue(maxsize=10)
     processes = list()
     for i in range(args.maxcpus):
         logger.debug('Starting process %s', i)
