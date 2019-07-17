@@ -309,7 +309,7 @@ only the portals you are interested in are shown.
 - Select and copy all rows in the table
 - Start a new spreadsheet
 - In the `A1` cell, type: `#!iitc`
-- Put the cursor into the `B1` cell and paste the portal list
+- Put the cursor into the `A2` cell and paste the portal list
 - Remove any rows with portals you don't want
 - You can add the waypoints below the IITC paste if you need
 
