@@ -267,7 +267,7 @@ def main():
             if not args.quiet:
                 if bestkm is not None:
                     sys.stdout.write('\r(Best: %0.2f km, %0.2f km2, %s portals, %s AP, %s): %s/%s     ' % (
-                        bestkm, bestsqkm, bestgraph.order(), bestap, nicetime, counter, args.iterations))
+                        bestkm, bestsqkm, maxfield.portal_graph.order(), bestap, nicetime, counter, args.iterations))
                     sys.stdout.flush()
 
             failcount = 0

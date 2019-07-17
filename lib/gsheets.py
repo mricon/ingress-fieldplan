@@ -189,6 +189,7 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     # (easier than going through the list backwards)
     prev_p = None
     plan_at = 0
+    n_waypoints = 0
 
     for p, q, f in workplan:
         plan_at += 1
@@ -250,6 +251,7 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
                 planrows.append(('W', a.node[p]['name']))
                 # Nothing else here
                 prev_p = p
+                n_waypoints += 1
                 continue
 
             planrows.append(('P', a.node[p]['name']))
@@ -260,6 +262,7 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
                 logger.info('--|X: destroy blocker')
                 # Nothing else here
                 prev_p = p
+                n_waypoints += 1
                 continue
 
             if totalkeys:
@@ -314,7 +317,7 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     #})
 
     dtitle = '%s %s (%0.2fkm/%dP/%sAP)' % (travelmoji[travelmode], stats['nicetime'], totalkm,
-                                           a.order(), '{:,}'.format(stats['ap']))
+                                           a.order()-n_waypoints, '{:,}'.format(stats['ap']))
     logger.info('Adding "%s" sheet with %d actions', dtitle, len(workplan))
     requests.append({
         'addSheet': {

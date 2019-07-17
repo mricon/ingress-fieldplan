@@ -43,15 +43,11 @@ combined_graph = None
 portal_graph = None
 waypoint_graph = None
 active_graph = None
-_manager = None
-_routing = None
 
 _capture_cache = dict()
 _dist_matrix = list()
 _time_matrix = list()
 _direct_dist_matrix = list()
-_area_cache = dict()
-_ortools_routing = None
 
 # in metres per minute, only used in the absence of Google Maps API
 travel_speed = {

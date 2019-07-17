@@ -285,6 +285,31 @@ Other options are:
 - `none`: don't use Heat Sinks at all
 - `idkfa`: you have all the keys and hack/cooldown times should not be counted
 
+## Copy-pasting portal lists from IITC
+
+*Note: This is an experimental feature.*
+
+Manually inputting portals can be tedious, so there is a way to copy and paste
+the list from IITC. You will need:
+
+- [IITC](https://iitc.me/desktop/), obviously
+- The "portals-list" plugin
+
+Navigate to the area you want to field in IITC, and try to zoom in so that
+only the portals you are interested in are shown.
+
+- Click on the "Portals List" link
+- Select and copy all rows in the table
+- Start a new spreadsheet
+- In the `A1` cell, type: `#!iitc`
+- Put the cursor into the `B1` cell and paste the portal list
+- Remove any rows with portals you don't want
+- You can add the waypoints below the IITC paste if you need
+
+Here is an [example
+spreadsheet](https://docs.google.com/spreadsheets/d/1D5dqZwWyZRwxdgy1OjmtB3md6uAO_yEd0hiF8C4QL4s/edit#gid=0)
+to illustrate the format.
+
 ## If something is not working
 
 You can open a GitHub issue if something is not working for you, but please
