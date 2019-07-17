@@ -9,7 +9,7 @@ The benefits over the original maxfield program are:
 1. Works on Python 3
 2. Generates more efficient solutions requiring fewer iterations
 3. Generates an efficient capture plan in addition to the fielding plan
-4. Uses Google Directions API for precise distances (optional, requires an API key)
+4. Uses Google Directions API for precise distances (recommended, requires an API key)
 5. Supports walking, biking, and driving plans (mostly relevant with Google Directions)
 
 The main perk of this implementation is the Google Spreadsheet fielding plan,
@@ -36,6 +36,12 @@ plan tab and zoom in for best readability.
 The main reason why I hacked on maxfield is to make it more convenient for
 biking, as having a simple plan to follow allows me to concentrate more on
 biking and less on figuring out what to do next.
+
+# Will this get me banned?
+
+Fieldplan does not touch any of the Niantic's servers, so it is perfectly
+within the Terms of Service. All of the data comes from the spreadsheet and
+from the Google Directions API.
 
 # Prerequisites
 
@@ -309,6 +315,9 @@ only the portals you are interested in are shown.
 Here is an [example
 spreadsheet](https://docs.google.com/spreadsheets/d/1D5dqZwWyZRwxdgy1OjmtB3md6uAO_yEd0hiF8C4QL4s/edit#gid=0)
 to illustrate the format.
+
+*CAUTION*: IITC is not an official resource provided by Niantic, and your use
+of it may be against their Terms of Service.
 
 ## If something is not working
 
