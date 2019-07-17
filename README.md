@@ -26,6 +26,13 @@ Here are a few examples of annotated spreadsheets generated with fieldplan:
 Open those links on your phone and choose "Use the App" -- then switch to the
 plan tab and zoom in for best readability.
 
+### Will this get me banned?
+
+Fieldplan does not touch any of the Niantic's servers, so it is perfectly
+within the Terms of Service. All of the data comes from the spreadsheet and
+from the Google Directions API.
+
+
 # Why use spreadsheets
 
 1. they are easy to edit to input portals
@@ -36,12 +43,6 @@ plan tab and zoom in for best readability.
 The main reason why I hacked on maxfield is to make it more convenient for
 biking, as having a simple plan to follow allows me to concentrate more on
 biking and less on figuring out what to do next.
-
-# Will this get me banned?
-
-Fieldplan does not touch any of the Niantic's servers, so it is perfectly
-within the Terms of Service. All of the data comes from the spreadsheet and
-from the Google Directions API.
 
 # Prerequisites
 
@@ -316,8 +317,8 @@ Here is an [example
 spreadsheet](https://docs.google.com/spreadsheets/d/1D5dqZwWyZRwxdgy1OjmtB3md6uAO_yEd0hiF8C4QL4s/edit#gid=0)
 to illustrate the format.
 
-*CAUTION*: IITC is not an official resource provided by Niantic, and your use
-of it may be against their Terms of Service.
+*CAUTION: IITC is not an official resource provided by Niantic, and your use
+of it [may be against their Terms of Service](https://iitc.me/faq/#ban).*
 
 ## If something is not working
 
