@@ -18,7 +18,6 @@ from lib.Triangle import Triangle, Deadend
 from ortools.constraint_solver import pywrapcp
 from ortools.constraint_solver import routing_enums_pb2
 
-from random import shuffle
 from datetime import timedelta
 
 import numpy as np
@@ -153,8 +152,12 @@ def genDistanceMatrix(gmapskey=None, gmapsmode='walking'):
 
 
 def getPortalDistance(p1, p2, direct=False):
-    mp1 = active_graph.node[p1]['pos']
-    mp2 = active_graph.node[p2]['pos']
+    if active_graph is None:
+        mp1 = p1
+        mp2 = p2
+    else:
+        mp1 = active_graph.node[p1]['pos']
+        mp2 = active_graph.node[p2]['pos']
     if direct:
         logger.debug('%s->%s=%s (direct)', combined_graph.node[mp1]['name'],
                      combined_graph.node[mp2]['name'], _direct_dist_matrix[mp1][mp2])
@@ -165,8 +168,12 @@ def getPortalDistance(p1, p2, direct=False):
 
 
 def getPortalTime(p1, p2):
-    mp1 = active_graph.node[p1]['pos']
-    mp2 = active_graph.node[p2]['pos']
+    if active_graph is None:
+        mp1 = p1
+        mp2 = p2
+    else:
+        mp1 = active_graph.node[p1]['pos']
+        mp2 = active_graph.node[p2]['pos']
     logger.debug('%s->%s=%s minutes (gmap)', combined_graph.node[mp1]['name'],
                  combined_graph.node[mp2]['name'], _time_matrix[mp1][mp2])
     return int(_time_matrix[mp1][mp2])
@@ -290,8 +297,11 @@ def makeWorkPlan(a, linkplan, is_subset=False):
     #     seen_portals.append(p)
     cachekey = [w_start, linkplan[0][0]]
     if is_subset:
+        subset_key = list()
         for n in range(a.order()):
-            cachekey.append(a.node[n]['pos'])
+            subset_key.append(a.node[n]['pos'])
+        subset_key.sort()
+        cachekey = cachekey + subset_key
 
     cachekey = tuple(cachekey)
     logger.debug('cachekey=%s', cachekey)
@@ -403,6 +413,32 @@ def makeWorkPlan(a, linkplan, is_subset=False):
     return workplan
 
 
+def getPortalsPerimeter(p1, p2, p3, direct=False):
+    s1 = getPortalDistance(p1, p2, direct=direct)
+    s2 = getPortalDistance(p2, p3, direct=direct)
+    s3 = getPortalDistance(p1, p3, direct=direct)
+    perimeter = s1+s2+s3
+    logger.debug('Triangle %s-%s-%s, perimeter: %s m', p1, p2, p3, perimeter)
+
+    return perimeter
+
+
+def getPortalsArea(p1, p2, p3):
+    s1 = getPortalDistance(p1, p2, direct=True)
+    s2 = getPortalDistance(p2, p3, direct=True)
+    s3 = getPortalDistance(p1, p3, direct=True)
+    # Hero's formula for triangle area
+    s = (s1 + s2 + s3)/2
+    try:
+        area = int(np.sqrt(s * (s - s1) * (s - s2) * (s - s3)))
+    except ValueError:
+        # Effectively, 0
+        area = 0
+    logger.debug('Triangle %s-%s-%s, area: %s m2', p1, p2, p3, area)
+
+    return area
+
+
 def getWorkplanStats(a, workplan, cooling='rhs'):
     totalap = a.order() * CAPTUREAP
     totaldist = 0
@@ -502,17 +538,7 @@ def getWorkplanStats(a, workplan, cooling='rhs'):
         fields += f
         totalap += FIELDAP*f
         for t in a.edges[p, q]['fields']:
-            s1 = getPortalDistance(t[0], t[1], direct=True)
-            s2 = getPortalDistance(t[1], t[2], direct=True)
-            s3 = getPortalDistance(t[0], t[2], direct=True)
-            # Hero's formula for triangle area
-            s = (s1 + s2 + s3)/2
-            try:
-                area = int(np.sqrt(s * (s - s1) * (s - s2) * (s - s3)))
-            except ValueError:
-                # Effectively, 0
-                area = 0
-            logger.debug('Field %s-%s-%s, area: %s sqm', t[0], t[1], t[2], area)
+            area = getPortalsArea(t[0], t[1], t[2])
             totalarea += area
 
     stats = {
@@ -525,6 +551,8 @@ def getWorkplanStats(a, workplan, cooling='rhs'):
         'area': totalarea,
         'links': links,
         'fields': fields,
+        'sqmpmin': int(totalarea/totaltime),
+        'appmin': int(totalap/totaltime),
     }
 
     return stats
@@ -786,6 +814,75 @@ def triangulate(a, perim):
     # Could not find a solution
     logger.debug('Failed with perim=%s', perim)
     return False
+
+
+def makeSubset(minportals, maxmu=False):
+    # Grab three random portals from the list
+    #subset = random.sample(range(portal_graph.order()), 3)
+    global active_graph
+    subset = None
+    sseed = None
+    sperim = None
+    active_graph = None
+    for p1 in range(portal_graph.order()):
+        for p2 in range(p1+1, portal_graph.order()):
+            if subset is not None:
+                break
+            for p3 in range(p2+1, portal_graph.order()):
+                if subset is not None:
+                    break
+                perim = getPortalsPerimeter(p1, p2, p3)
+                if maxmu:
+                    # Looking for the largest triangle
+                    if sperim is None or perim > sperim:
+                        sseed = [p1, p2, p3]
+                else:
+                    # Looking for the smallest triangle
+                    if perim <= 0:
+                        # This is good enough
+                        subset = [p1, p2, p3]
+                        break
+                    if sperim is None or perim < sperim:
+                        sseed = [p1, p2, p3]
+                        sperim = perim
+    if subset is None:
+        subset = sseed
+    # Add portals until we get to minportals
+    while len(subset) < minportals:
+        addSubsetPortal(subset, maxmu)
+    return subset
+
+
+def addSubsetPortal(subset, maxmu=False):
+    candidate = None
+    slen = None
+    for i in range(portal_graph.order()):
+        if i in subset:
+            continue
+        mylen = 0
+        for p in subset:
+            mylen += getPortalDistance(p, i)
+        if maxmu:
+            if slen is None or mylen > slen:
+                candidate = i
+                slen = mylen
+        else:
+            if slen is None or mylen < slen:
+                candidate = i
+                slen = mylen
+    if candidate is not None:
+        subset.append(candidate)
+
+
+def makeSubsetGraph(subset):
+    subset.sort()
+    b = nx.DiGraph()
+    ct = 0
+    for num in subset:
+        attrs = portal_graph.node[num]
+        b.add_node(ct, **attrs)
+        ct += 1
+    return b
 
 
 def maxFields(a):

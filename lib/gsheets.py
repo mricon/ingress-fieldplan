@@ -58,18 +58,6 @@ def get_portals_from_sheet(service, spid):
     portals = []
     waypoints = []
     logger.info('Grabbing the spreadsheet')
-    hyperlinks = None
-    # if the first row/column says #!iitc, then we parse the sheet
-    # as iitc portal listing copypaste
-    if rows[0][0] == '#!iitc':
-        # Grab hyperlink data
-        res = service.spreadsheets().get(
-            spreadsheetId=spid,
-            ranges=['B1:B100'],
-            fields="sheets/data/rowData/values/hyperlink",
-        ).execute()
-        hyperlinks = res['sheets'][0]['data'][0]['rowData']
-
     at_row = 0
     startpoint_loc = None
     endpoint_loc = None
@@ -115,29 +103,14 @@ def get_portals_from_sheet(service, spid):
             at_row += 1
             continue
         if row[1].find('pll=') < 0:
-            if hyperlinks is not None:
-                # Grab portal name and location from iitc paste
-                name = row[1]
-                url = hyperlinks[at_row]['values'][0]['hyperlink']
-                if url.find('pll=') < 0:
-                    logger.debug('hyperlink=%s', hyperlinks[at_row])
-                    logger.info('IITC row link does not look sane, ignoring')
-                    at_row += 1
-                    continue
-                logger.info('Adding portal from IITC paste: %s', name)
-                at_row += 1
-                coords = _get_qp_from_url(url)
-                portals.append([name, coords])
-                continue
-            else:
-                logger.debug('link=%s', row[1])
-                logger.info('Portal link does not look sane, ignoring')
-                at_row += 1
-                continue
-        else:
-            logger.info('Adding portal: %s', row[0])
-            portals.append((row[0], _get_qp_from_url(row[1])))
+            logger.debug('link=%s', row[1])
+            logger.info('Portal link does not look sane, ignoring')
             at_row += 1
+            continue
+
+        logger.info('Adding portal: %s', row[0])
+        portals.append((row[0], _get_qp_from_url(row[1])))
+        at_row += 1
 
     # make sure end waypoint is always last in the waypoint list
     if endpoint_loc is not None and endpoint_loc != len(waypoints)-1:
@@ -302,11 +275,11 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
         logger.info('Not saving spreadsheet per request.')
         return
 
-    #title = 'Ingress: around %s (%s AP)' % (a.node[0]['name'], '{:,}'.format(totalap))
-    #logger.info('Setting spreadsheet title: %s', title)
+    # title = 'Ingress: around %s (%s AP)' % (a.node[0]['name'], '{:,}'.format(totalap))
+    # logger.info('Setting spreadsheet title: %s', title)
 
     requests = list()
-    #requests.append({
+    # requests.append({
     #    'updateSpreadsheetProperties': {
     #        'properties': {
     #            'title': title,
@@ -314,7 +287,7 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     #        },
     #        'fields': 'title',
     #    }
-    #})
+    # })
 
     dtitle = '%s %s (%0.2fkm/%dP/%sAP)' % (travelmoji[travelmode], stats['nicetime'], totalkm,
                                            a.order()-n_waypoints, '{:,}'.format(stats['ap']))

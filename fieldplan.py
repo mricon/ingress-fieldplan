@@ -9,9 +9,7 @@ from lib import gsheets, maxfield, animate
 import logging
 import multiprocessing as mp
 import time
-
-import networkx as nx
-import random
+import queue
 
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
@@ -22,44 +20,37 @@ logger = logging.getLogger('fieldplan')
 _V_ = '3.2.0'
 
 
-def queue_job(args, ready_queue):
-    # When limiting the number of actions, we use this
-    # counter to see how many portals out of the total
-    # number provided we need to consider.
-    maxportals = maxfield.portal_graph.order()
-    p_considered = maxportals
-    is_subset = False
-    # We just crank out plans until we are terminated
-    while True:
-        if p_considered == maxportals:
-            b = maxfield.portal_graph.copy()
-        else:
-            b = nx.DiGraph()
-            ct = 0
-            is_subset = True
-            subset = random.sample(range(maxportals), p_considered)
+def queue_job(args, best, counter, ready_queue):
+    nogood = 0
+    # A bit of a magical number used for subsets
+    # (basically, 10% of iterations per subprocess)
+    nogood_max = int(args.iterations/10/args.maxcpus)
+    if args.maxtime:
+        is_subset = True
+        subset = maxfield.makeSubset(3, args.maxmu)
+        mygraph = maxfield.makeSubsetGraph(subset)
+    else:
+        is_subset = False
+        subset = None
+        mygraph = maxfield.portal_graph
 
-            subset.sort()
-            if args.beginfirst:
-                subset[0] = 0
-            for num in subset:
-                attrs = maxfield.portal_graph.node[num]
-                b.add_node(ct, **attrs)
-                ct += 1
+    failed = (False, None, None, None)
+    bestmode = False
+    mycounter = 0
+
+    while True:
+        mycounter += 1
+        # Increment global counter by 10s to reduce lock contention
+        if mycounter >= 10:
+            with counter.get_lock():
+                counter.value += mycounter
+            mycounter = 0
+
+        b = mygraph.copy()
 
         success = maxfield.maxFields(b)
-        if success and args.maxkeys:
-            # do any of the portals require more than maxkeys
-            sane_key_reqs = True
-            for i in range(b.order()):
-                if b.in_degree(i) > args.maxkeys:
-                    sane_key_reqs = False
-                    break
-
-            if not sane_key_reqs:
-                success = False
         if not success:
-            ready_queue.put((False, None, None, None))
+            ready_queue.put(failed)
             continue
 
         for t in b.triangulation:
@@ -73,25 +64,53 @@ def queue_job(args, ready_queue):
         workplan = maxfield.makeWorkPlan(b, linkplan, is_subset)
 
         if workplan is None:
-            ready_queue.put((False, None, None, None))
+            ready_queue.put(failed)
             continue
 
         stats = maxfield.getWorkplanStats(b, workplan, cooling=args.cooling)
 
-        if args.maxtime is not None:
-            if stats['time'] > args.maxtime:
-                p_considered -= 1
-                if p_considered < 3:
-                    p_considered = 3
-                ready_queue.put((False, None, None, None))
+        if args.maxmu:
+            mybest = stats['sqmpmin']
+        else:
+            mybest = stats['appmin']
+
+        if args.maxtime:
+            if bestmode:
+                # In best mode, we just run the same graph in hopes to improve it
+                if nogood > nogood_max:
+                    # Couldn't improve on the best
+                    bestmode = False
+            elif args.minap is not None and stats['ap'] < args.minap:
+                # Add moar portals
+                maxfield.active_graph = None
+                maxfield.addSubsetPortal(subset, args.maxmu)
+                mygraph = maxfield.makeSubsetGraph(subset)
                 continue
-            elif p_considered < maxportals:
-                p_considered += 1
-            if args.mintime is not None and stats['time'] < args.mintime:
-                ready_queue.put((False, None, None, None))
+            elif stats['time'] > args.maxtime:
+                nogood += 1
+                if nogood > nogood_max:
+                    # start from a brand new random triangle
+                    subset = maxfield.makeSubset(3, args.maxmu)
+                    mygraph = maxfield.makeSubsetGraph(subset)
+                    nogood = 0
                 continue
 
+            maxfield.active_graph = None
+            maxfield.addSubsetPortal(subset, args.maxmu)
+            mygraph = maxfield.makeSubsetGraph(subset)
+
+        if mybest <= best.value:
+            nogood += 1
+            continue
+
+        with best.get_lock():
+            best.value = mybest
+        with counter.get_lock():
+            counter.value = 0
         ready_queue.put((success, b, workplan, stats))
+        nogood = 0
+        mycounter = 0
+        bestmode = True
 
 
 # noinspection PyUnresolvedReferences
@@ -106,9 +125,6 @@ def main():
     parser.add_argument('-i', '--iterations', type=int, default=10000,
                         help='Number of iterations to perform. More iterations may improve '
                         'results, but will take longer to process.')
-    parser.add_argument('-k', '--maxkeys', type=int, default=None,
-                        help='Limit number of keys required per portal '
-                        '(may result in less efficient plans).')
     parser.add_argument('-m', '--travelmode', default='walking',
                         help='Travel mode (walking, bicycling, driving, transit).')
     parser.add_argument('-s', '--sheetid', default=None, required=True,
@@ -129,8 +145,8 @@ def main():
                         help='Find a plan with highest MU coverage instead of best AP')
     parser.add_argument('-t', '--maxtime', default=None, type=int,
                         help='Ignore plans that would take longer than this (in minutes)')
-    parser.add_argument('--mintime', default=None, type=int,
-                        help='Ignore plans that would take less time than this (in minutes)')
+    parser.add_argument('--minap', default=None, type=int,
+                        help='Ignore plans that result in less AP than specified (used with --maxtime)')
     parser.add_argument('--maxcpus', default=mp.cpu_count(), type=int,
                         help='Maximum number of cpus to use')
     parser.add_argument('-l', '--log', default=None,
@@ -144,10 +160,14 @@ def main():
                         help='(Obsolete, use waypoints instead)')
     parser.add_argument('-r', '--roundtrip', action='store_true', default=False,
                         help='(Obsolete, use waypoints instead)')
+    parser.add_argument('-k', '--maxkeys', type=int, default=None,
+                        help='(Obsolete, use --cooling options instead)')
     args = parser.parse_args()
 
     if args.beginfirst or args.roundtrip:
         parser.error('Options -b and -r are obsolete. Use waypoints instead (see README).')
+    if args.maxkeys:
+        parser.error('Option -k is obsolete. Use --cooling instead.')
 
     if args.iterations < 0:
         parser.error('Number of extra samples should be positive')
@@ -197,49 +217,45 @@ def main():
 
     maxfield.genDistanceMatrix(args.gmapskey, args.travelmode)
 
-    (bestgraph, bestplan) = maxfield.loadCache(args.travelmode, args.maxmu, args.maxtime)
+    if args.maxtime:
+        bestgraph = None
+        bestplan = None
+    else:
+        (bestgraph, bestplan) = maxfield.loadCache(args.travelmode, args.maxmu, args.maxtime)
+
+    if args.maxmu:
+        beststr = 'm2/min'
+    else:
+        beststr = 'AP/min'
+
+    beststats = None
+    bestkm = '-.--'
+    bestsqkm = '-.--'
+    bestap = '-----'
+    nicetime = '-:--'
+    bestportals = '-'
+    best = 0
 
     if bestgraph is not None:
         beststats = maxfield.getWorkplanStats(bestgraph, bestplan)
-        bestdist = beststats['dist']
-        bestarea = beststats['area']
-        bestkm = bestdist/float(1000)
-        bestsqkm = bestarea/float(1000000)
-        nicetime = beststats['nicetime']
-        bestmutime = bestarea/beststats['time']
-        bestap = beststats['ap']
-        bestaptime = bestap/beststats['time']
-        logger.info('Best distance of the plan loaded from cache: %0.2f km', bestkm)
-        logger.info('Best coverage of the plan loaded from cache: %0.2f km2', bestsqkm)
-        logger.info('Best AP of the plan loaded from cache: %s', bestap)
+        if args.maxmu:
+            best = beststats['sqmpmin']
+        else:
+            best = beststats['appmin']
 
-    else:
-        bestkm = None
-        bestsqkm = None
-        beststats = None
-        bestmutime = 0
-        bestap = 0
-        nicetime = '0:00'
-        bestaptime = 0
-
-    counter = 0
-
-    if args.maxkeys:
-        logger.info('Finding an efficient plan with max %s keys', args.maxkeys)
-    elif args.maxmu:
-        logger.info('Finding an efficient plan that maximizes MU coverage')
-    else:
-        logger.info('Finding an efficient plan that maximizes AP')
+    logger.info('Finding an efficient plan that maximizes %s', beststr)
 
     failcount = 0
     seenplans = list()
 
-    # set up multiprocessing
+    s_best = mp.Value('I', best)
+    s_counter = mp.Value('I', 0)
+
     ready_queue = mp.Queue(maxsize=10)
     processes = list()
     for i in range(args.maxcpus):
         logger.debug('Starting process %s', i)
-        p = mp.Process(target=queue_job, args=(args, ready_queue))
+        p = mp.Process(target=queue_job, args=(args, s_best, s_counter, ready_queue))
         processes.append(p)
         p.start()
     logger.info('Started %s worker processes', len(processes))
@@ -247,12 +263,40 @@ def main():
     logger.info('Ctrl-C to exit and use the latest best plan')
 
     try:
-        while counter < args.iterations:
+        while True:
             if failcount > 1000:
                 logger.info('Too many consecutive failures, exiting early.')
                 break
 
-            success, b, workplan, stats = ready_queue.get()
+            if beststats is not None:
+                bestdist = beststats['dist']
+                bestarea = beststats['area']
+                bestap = beststats['ap']
+                bestkm = '%0.2f' % (bestdist/float(1000))
+                bestsqkm = '%0.2f' % (bestarea/float(1000000))
+                nicetime = beststats['nicetime']
+                if args.maxmu:
+                    best = beststats['sqmpmin']
+                else:
+                    best = beststats['appmin']
+                bestportals = bestgraph.order()
+                if maxfield.waypoint_graph is not None:
+                    bestportals -= maxfield.waypoint_graph.order()
+
+            if not args.quiet:
+                sys.stdout.write('\r(Best: %s km, %s km2, %s portals, %s AP, %s %s, %s): %s/%s     ' % (
+                    bestkm, bestsqkm, bestportals, bestap, best, beststr, nicetime, s_counter.value,
+                    args.iterations))
+                sys.stdout.flush()
+
+            if s_counter.value >= args.iterations:
+                break
+
+            try:
+                success, b, workplan, stats = ready_queue.get_nowait()
+            except queue.Empty:
+                time.sleep(0.1)
+                continue
 
             if not success:
                 failcount += 1
@@ -262,45 +306,21 @@ def main():
                 # to avoid pingpoings for best plan.
                 continue
 
-            counter += 1
-
             if not args.quiet:
                 if bestkm is not None:
-                    sys.stdout.write('\r(Best: %0.2f km, %0.2f km2, %s portals, %s AP, %s): %s/%s     ' % (
-                        bestkm, bestsqkm, maxfield.portal_graph.order(), bestap, nicetime, counter, args.iterations))
-                    sys.stdout.flush()
+                    sys.stdout.write('\r(      %s km, %s km2, %s portals, %s AP, %s %s, %s)            \n' % (
+                        bestkm, bestsqkm, bestportals, bestap, best, beststr, nicetime))
+
+            beststats = stats
+            bestgraph = b
+            bestplan = workplan
+
+            if args.maxmu:
+                best = stats['sqmpmin']
+            else:
+                best = stats['appmin']
 
             failcount = 0
-
-            mutime = int(stats['area']/stats['time'])
-            aptime = int(stats['ap']/stats['time'])
-
-            newbest = False
-            if args.maxmu:
-                # choose a plan that gives us most MU captured per distance of travel
-                if mutime > bestmutime:
-                    newbest = True
-            else:
-                # We want most AP per distance of travel
-                if aptime > bestaptime:
-                    newbest = True
-
-            if newbest:
-                if bestplan:
-                    sys.stdout.write('\r(     \n')
-                beststats = stats
-                counter = 0
-                bestplan = workplan
-                seenplans.append(workplan)
-                bestgraph = b
-                bestdist = stats['dist']
-                bestarea = stats['area']
-                bestkm = bestdist/float(1000)
-                bestsqkm = bestarea/float(1000000)
-                nicetime = stats['nicetime']
-                bestmutime = mutime
-                bestap = stats['ap']
-                bestaptime = aptime
 
     except KeyboardInterrupt:
         if not args.quiet:

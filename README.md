@@ -88,7 +88,7 @@ proximity but require long detours.
 
 1. go to the [Instructions page](https://developers.google.com/maps/documentation/directions/get-api-key)
 2. click "Get Started" and go through the process
-3. run the fieldplan command with the -g {yourkey} switch once
+3. run the fieldplan command with the `-g {yourkey}` switch once
 4. fieldplan will cache the key and use it automatically next time
 
 # Testing it out
@@ -147,7 +147,7 @@ Generally:
 
 - 10 iterations: probably bad plans
 - 1,000 iterations: okayish plans
-- 10,000 iterations: decent plans
+- 10,000 iterations: good plans
 - 20,000 iterations: very good plans
 - 100,000 iterations: total overkill
 
@@ -155,49 +155,58 @@ Since iterations are largely random, it's entirely possible to find the best
 possible plan on your first run, and to only find terrible plans even after
 100,000 iterations. YMMV.
 
-## Using the -k switch to limit the number of keys required
-
-The optimization steps will try to reduce how much you travel between portals,
-so it's possible that the final plan will require crazy amounts of keys (see
-more on that below). If you're in an area where you've never been before and
-want to make sure that you don't need too many keys from each portal, you can
-make sure by passing the `-k` switch.
-
 ## Getting lots of keys from portals
 
 Getting lots of keys used to be difficult, but really isn't any longer. If
-you're good at glyphing, then you can expect to get 2 keys each time you hack
-a portal. If you speed-hack (with "Complex") on a 3+ glyph portal, then you
-can get as many as 3 keys from a single hack.
+you're good at glyphing, then you can expect to get 2 keys almost each time
+you hack a portal.
 
-Your strategy, therefore, should be to always glyph-hack with "More" and
-"Complex". If you're capturing by yourself, that should limit you to 3-glyph
-portals, and that's not too hard to do at "Complex" speeds.
+Your strategy, therefore, should be to always glyph-hack with "More". If you're
+capturing by yourself, that should limit you to 3-glyph portals, and that's not
+too hard to do -- you can even throw in a "Complex" to speed things up.
 
-## Plans that want you to get 6+ keys from a portal
+### Plans that want you to get 6+ keys from a portal
 
 Because of the optimization routines, you may end up with plans that require
-you to get lots and lots of keys from a single portal. You may be tempted to
-redo those with -k, but I find it is actually more convenient to have a single
-portal requiring lots of keys than to have lots of portals needing 3-4 keys.
-If you have a portal requiring 8 keys, you can:
+you to get lots and lots of keys from a single portal. This may seem crazy, 
+but if you are using Heat Sinks, this actually results in faster gameplay
+than plans where you need 3-4 keys from every portal.
+
+For example, if you have a portal requiring 8 keys, you would:
 
 1. Speed-hack to get 2 keys (1st hack)
-2. Add a rare/very rare Heat Sink mod
+2. Add a Rare Heat Sink mod
 3. Immediately speed-hack for 2 more keys (free hack)
-4. Wait 1:30, speed-hack for 2 more keys (2nd hack)
-5. Wait 1:30, speed-hack for 2 more keys (3rd hack)
-6. Wait 1:30, speed-hack again if previous hacks didn't always get you 2 keys (4th hack)
-7. Install a Multihack if you're unlucky and you don't yet have 8 keys
+4. Wait 2 minutes, speed-hack for 2 more keys (2nd hack)
+5. Wait 2 minutes, speed-hack for 2 more keys (3rd hack)
+6. Wait 2 minutes, speed-hack again if previous hacks didn't always get you 2 keys (4th hack)
+7. Install a Multihack if you were unlucky and didn't get 8 keys
 
-As you see, getting as many as 8 keys usually requires a single VRHS mod and
-less than 5 minutes of waiting for portal cooldown. This ends up much faster
-than installing common Heat Sinks at every other portal needing you to ensure
-3-4 keys.
+As you see, getting as many as 8 keys usually requires a single RHS mod and
+about 6 minutes of waiting for portal cooldown. This ends up much faster
+than installing common Heat Sinks at every other portal to get 3-4 keys, and you
+end up using fewer Heat Sink mods.
 
 Note, that the plan instructions will always tell you how many keys you need
 for the portal before you leave. Often, even if a portal requires 5-6 keys,
 you may not need to get them all at once.
+
+### Cooling
+
+While estimating the time to play, the software will assume that you will get
+1.5 keys per hack and use Rare Heat Sinks to speed up portal cooldown.
+If you only have regular Heat Sinks, you can specify that with `--cooling hs`.
+
+Other options are:
+
+- `rhs`: Rare Heat Sink (default)
+- `hs`: Heat Sink
+- `vrhs`: Very Rare Heat Sink
+- `none`: don't use Heat Sinks at all
+- `idkfa`: you have all the keys and hack/cooldown times should not be counted
+
+Running with `--cooling none` is recommended if you have lots of time, don't
+mind extra moving around, or don't want to spend your Heat Sink mods.
 
 ## Start and End waypoints
 
@@ -257,12 +266,13 @@ You may need to install python-tkinter for it to work.
 
 ## I have an hour to play, find me a plan that works
 
-*Note: This is an experimental feature.*
+*Note:* This is an experimental feature and currently requires significantly
+more iterations to find efficient plans, so run it with `-i 50000` and higher.
 
 This probably happened to you -- you found an area with lots of uncaptured
 portals, but you only have a limited amount of time to play. You can give
 Fieldplan that large list of portals and ask it to find you a plan that would
-give you maximum AP (or MU, with `-u`) within the time constraints specified.
+give you maximum AP (or MU, with `-u`) within the time constraint specified.
 The software will try various subsets of portals until it finds something that
 satisfies the parameters.
 
@@ -270,52 +280,46 @@ For example, there's a historical site with 25 portals, but fielding them all
 would take over 3 hours:
 
 - Create the spreadsheet with all 25 portals
-- Run fieldplan with `--maxtime 130 --mintime 110` flags
+- Run fieldplan with `--maxtime 120`
 
-Fieldplan will try to find the most efficient plan that will take roughly
+Fieldplan will try to find the most efficient plan that will take no more than
 2 hours to execute.
 
-*Note:* This is an experimental feature and currently requires significantly
-more iterations to find efficient plans, so run it with `-i 50000` and higher.
+### Setting minimal AP
 
-### Cooling
+Since Fieldplan prioritizes plans with highest AP (or MU) per minute of
+gameplay, it's possible that the most efficient plan it finds will contain only
+a few portals from the list. This especially tends to happen when prioritizing
+MU over AP.
 
-While estimating the time to play, the software will assume that you will get
-1.5 keys per hack and use Rare Heat Sinks to speed up portal cooldown.
-If you only have regular Heat Sinks, you can specify that with `--cooling hs`.
-
-Other options are:
-
-- `rhs`: Rare Heat Sink (default)
-- `hs`: Heat Sink
-- `vrhs`: Very Rare Heat Sink
-- `none`: don't use Heat Sinks at all
-- `idkfa`: you have all the keys and hack/cooldown times should not be counted
+You can pass `--minap` to tell Fieldplan to not consider plans resulting in
+too few total AP points. For example, to get plans with at least 50,000 AP, run
+`--minap 50000`.
 
 ## Copy-pasting portal lists from IITC
-
-*Note: This is an experimental feature.*
 
 Manually inputting portals can be tedious, so there is a way to copy and paste
 the list from IITC. You will need:
 
 - [IITC](https://iitc.me/desktop/), obviously
-- The "portals-list" plugin
+- [Multi-Export Plugin](https://github.com/modkin/Ingress-IITC-Multi-Export/raw/master/multi_export.user.js)
 
-Navigate to the area you want to field in IITC, and try to zoom in so that
-only the portals you are interested in are shown.
+Here's how to use it:
 
-- Click on the "Portals List" link
-- Select and copy all rows in the table
+- Draw a polygon around the portals you are interested in
+- Click on "Multi-Export"
+- Click on `XXX` in the "Polygon/TSV" column
+- Copy all entries in the text area
 - Start a new spreadsheet
-- In the `A1` cell, type: `#!iitc`
-- Put the cursor into the `A2` cell and paste the portal list
-- Remove any rows with portals you don't want
-- You can add the waypoints below the IITC paste if you need
+- Paste in the `A1` cell
 
-Here is an [example
-spreadsheet](https://docs.google.com/spreadsheets/d/1D5dqZwWyZRwxdgy1OjmtB3md6uAO_yEd0hiF8C4QL4s/edit#gid=0)
-to illustrate the format.
+Fieldplan needs Portal names in the column `A` and Intel URLs in the column `B`,
+so you will need to either:
+
+- delete columns `D`, `C`, `A`, or
+- rearrange the columns to be in the expected order
+
+Fieldplan will ignore anything not in columns `A` and `B`.
 
 *CAUTION: IITC is not an official resource provided by Niantic, and your use
 of it [may be against their Terms of Service](https://iitc.me/faq/#ban).*
