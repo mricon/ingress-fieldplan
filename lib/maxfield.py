@@ -43,10 +43,10 @@ portal_graph = None
 waypoint_graph = None
 active_graph = None
 
-_capture_cache = dict()
-_dist_matrix = list()
-_time_matrix = list()
-_direct_dist_matrix = list()
+capture_cache = dict()
+dist_matrix = list()
+time_matrix = list()
+direct_dist_matrix = list()
 
 # in metres per minute, only used in the absence of Google Maps API
 travel_speed = {
@@ -65,8 +65,8 @@ def getCacheDir():
 
 
 def genDistanceMatrix(gmapskey=None, gmapsmode='walking'):
-    global _dist_matrix
-    global _direct_dist_matrix
+    global dist_matrix
+    global direct_dist_matrix
 
     cachedir = getCacheDir()
     distcachefile = os.path.join(cachedir, 'distcache')
@@ -146,9 +146,9 @@ def genDistanceMatrix(gmapskey=None, gmapsmode='walking'):
             matrow.append(dist)
             matrow_dur.append(duration)
 
-        _direct_dist_matrix.append(direct_matrow)
-        _dist_matrix.append(matrow)
-        _time_matrix.append(matrow_dur)
+        direct_dist_matrix.append(direct_matrow)
+        dist_matrix.append(matrow)
+        time_matrix.append(matrow_dur)
 
 
 def getPortalDistance(p1, p2, direct=False):
@@ -160,11 +160,11 @@ def getPortalDistance(p1, p2, direct=False):
         mp2 = active_graph.node[p2]['pos']
     if direct:
         logger.debug('%s->%s=%s (direct)', combined_graph.node[mp1]['name'],
-                     combined_graph.node[mp2]['name'], _direct_dist_matrix[mp1][mp2])
-        return _direct_dist_matrix[mp1][mp2]
+                     combined_graph.node[mp2]['name'], direct_dist_matrix[mp1][mp2])
+        return direct_dist_matrix[mp1][mp2]
     logger.debug('%s->%s=%s (gmap)', combined_graph.node[mp1]['name'],
-                 combined_graph.node[mp2]['name'], _dist_matrix[mp1][mp2])
-    return _dist_matrix[mp1][mp2]
+                 combined_graph.node[mp2]['name'], dist_matrix[mp1][mp2])
+    return dist_matrix[mp1][mp2]
 
 
 def getPortalTime(p1, p2):
@@ -175,8 +175,8 @@ def getPortalTime(p1, p2):
         mp1 = active_graph.node[p1]['pos']
         mp2 = active_graph.node[p2]['pos']
     logger.debug('%s->%s=%s minutes (gmap)', combined_graph.node[mp1]['name'],
-                 combined_graph.node[mp2]['name'], _time_matrix[mp1][mp2])
-    return int(_time_matrix[mp1][mp2])
+                 combined_graph.node[mp2]['name'], time_matrix[mp1][mp2])
+    return int(time_matrix[mp1][mp2])
 
 
 def populateGraphs(portals, waypoints):
@@ -254,7 +254,7 @@ def makeLinkPlan(a):
 
 def makeWorkPlan(a, linkplan, is_subset=False):
     global active_graph
-    global _capture_cache
+    global capture_cache
 
     w_start = None
     w_end = None
@@ -306,7 +306,7 @@ def makeWorkPlan(a, linkplan, is_subset=False):
     cachekey = tuple(cachekey)
     logger.debug('cachekey=%s', cachekey)
 
-    if cachekey not in _capture_cache:
+    if cachekey not in capture_cache:
         logger.debug('Capture cache miss, starting ortools calculation')
         manager = pywrapcp.RoutingIndexManager(len(all_p), 1, w_start)
         routing = pywrapcp.RoutingModel(manager)
@@ -329,7 +329,7 @@ def makeWorkPlan(a, linkplan, is_subset=False):
 
         if not assignment:
             logger.debug('Could not solve for these constraints, ignoring plan')
-            _capture_cache[cachekey] = None
+            capture_cache[cachekey] = None
             return None
 
         index = routing.Start(0)
@@ -339,13 +339,13 @@ def makeWorkPlan(a, linkplan, is_subset=False):
             dist_ordered.append(node)
             index = assignment.Value(routing.NextVar(index))
 
-        _capture_cache[cachekey] = dist_ordered
+        capture_cache[cachekey] = dist_ordered
     else:
         logger.debug('Capture cache hit')
-        if _capture_cache[cachekey] is None:
+        if capture_cache[cachekey] is None:
             logger.debug('Known unsolvable, ignoring')
             return None
-        dist_ordered = _capture_cache[cachekey]
+        dist_ordered = capture_cache[cachekey]
 
     a.captureplan = dist_ordered
 

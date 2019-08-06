@@ -19,12 +19,34 @@ logger = logging.getLogger('fieldplan')
 # version number
 _V_ = '3.2.0'
 
+_maxfield_names = {'combined_graph', 'portal_graph', 'waypoint_graph', 'active_graph', 'capture_cache', 'dist_matrix',
+                   'time_matrix', 'direct_dist_matrix'}
+
+
+def push_maxfield_data(args):
+    if sys.platform != 'win32':
+        return
+    source = vars(maxfield)
+    dest = vars(args)
+    for name in _maxfield_names:
+        dest[name] = source[name]
+
+
+def pop_maxfield_data(args):
+    if sys.platform != 'win32':
+        return
+    source = vars(args)
+    dest = vars(maxfield)
+    for name in _maxfield_names:
+        dest[name] = source[name]
+
 
 def queue_job(args, best, counter, ready_queue):
     nogood = 0
     # A bit of a magical number used for subsets
     # (basically, 10% of iterations per subprocess)
     nogood_max = int(args.iterations/10/args.maxcpus)
+    pop_maxfield_data(args)
     if args.maxtime:
         is_subset = True
         subset = maxfield.makeSubset(3, args.maxmu)
@@ -250,6 +272,8 @@ def main():
 
     s_best = mp.Value('I', best)
     s_counter = mp.Value('I', 0)
+
+    push_maxfield_data(args)
 
     ready_queue = mp.Queue(maxsize=10)
     processes = list()
