@@ -131,7 +131,7 @@ to find all the knobs and levers you can tweak. Here are a few pointers:
 
 ## How many iterations to use?
 
-The default is 10,000 random iterations to find the best fielding plan. The
+The default is 5,000 random iterations to find the best fielding plan. The
 bisecting and fielding is done randomly, largely because finding efficient
 movement plans for a set of geographical coordinates is one of those "NP hard"
 problems (look up the "Travelling Salesman Problem"). There is an optimization
@@ -139,21 +139,15 @@ step after each random plan to fix the worst inefficiencies, so the results
 after each iteration are already tweaked. In my personal experience using it,
 I've found 10,000 a good number of iterations to generate decent plans.
 
-*Note:* the actual number of iterations is actually higher, because we reset the
-counter after each new best plan is found. It's possible to find a new best plan
-on iteration 9,999 and thus reset the counter back to 0 again.
-
 Generally:
 
-- 10 iterations: probably bad plans
-- 1,000 iterations: okayish plans
-- 10,000 iterations: good plans
-- 20,000 iterations: very good plans
-- 100,000 iterations: total overkill
+- 500 iterations: not very good plans
+- 5,000 iterations: good plans
+- 10,000 iterations: very good plans
 
 Since iterations are largely random, it's entirely possible to find the best
 possible plan on your first run, and to only find terrible plans even after
-100,000 iterations. YMMV.
+10,000 iterations. YMMV.
 
 ## Getting lots of keys from portals
 

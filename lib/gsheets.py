@@ -121,6 +121,7 @@ def get_portals_from_sheet(service, spid):
 
 
 def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walking', nosave=False):
+    from pprint import pformat
 
     if spid.find('/') > 0:
         chunks = spid.split('/')
@@ -135,28 +136,13 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     }
 
     n = a.order()
-    logger.debug('portals:')
+    logger.info('portals:')
     for p in range(n):
-        logger.debug('    %d: %s', p, a.node[p]['name'])
-    logger.debug('orig_linkplan:')
-    for line in a.orig_linkplan:
-        logger.debug('    %s: %s -> %s', line, a.node[line[0]]['name'], a.node[line[1]]['name'])
-    logger.debug('    len: %s', len(a.orig_linkplan))
-    logger.debug('fixes:')
-    for line in a.fixes:
-        logger.debug('    %s', line)
-    logger.debug('fixed linkplan:')
-    for line in a.linkplan:
-        logger.debug('    %s: %s -> %s', line, a.node[line[0]]['name'], a.node[line[1]]['name'])
-    logger.debug('    len: %s', len(a.linkplan))
-    logger.debug('captureplan:')
-    for line in a.captureplan:
-        logger.debug('    %s: %s', line, a.node[line]['name'])
-    logger.debug('workplan:')
-    for line in workplan:
-        logger.debug('    %s', line)
-
-    logger.debug('stats: %s', stats)
+        logger.info('    %d: %s', p, a.node[p]['name'])
+    logger.info('orig_workplan:\n%s', pformat(a.orig_workplan))
+    logger.info('fixes:\n%s', pformat(a.fixes))
+    logger.info('workplan:\n%s', pformat(workplan))
+    logger.info('stats:\n%s', pformat(stats))
 
     # Track which portals we've already captured
     # (easier than going through the list backwards)
@@ -199,8 +185,8 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
                 special = None
 
             if prev_p is not None:
-                dist = maxfield.getPortalDistance(prev_p, p)
-                duration = maxfield.getPortalTime(prev_p, p)
+                dist = maxfield.get_portal_distance(prev_p, p)
+                duration = maxfield.get_portal_time(prev_p, p)
 
                 if dist > 40:
                     if dist >= 500:
@@ -258,7 +244,9 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
 
         if q is not None:
             # Add links/fields
-            if f:
+            if f > 1:
+                action = 'D'
+            elif f == 1:
                 action = 'F'
             else:
                 action = 'L'
@@ -340,11 +328,13 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
         colors += [
             ('L', 0.6, 0.8, 1.0),  # Link
             ('F', 0.3, 0.5, 1.0),  # Field
+            ('D', 0.2, 0.3, 0.8),  # Double Field
         ]
     else:
         colors += [
             ('L', 0.8, 1.0, 0.8),  # Link
             ('F', 0.5, 1.0, 0.5),  # Field
+            ('D', 0.3, 0.8, 0.3),  # Double Field
         ]
 
     for sid in sheet_ids:

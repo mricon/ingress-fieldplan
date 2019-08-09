@@ -211,7 +211,9 @@ class Triangle:
         # The edge that completes this triangle
         p, q = edges[lastInd]
 
-        self.a.edges[p, q]['fields'].append(self.verts)
+        if self.verts not in self.a.edges[p, q]['fields']:
+            self.a.edges[p, q]['fields'].append(self.verts)
+
         logger.debug('edge %s, fields: %s', (p, q), self.a.edges[p, q]['fields'])
 
         for child in self.children:

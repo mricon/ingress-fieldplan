@@ -20,6 +20,8 @@ from ortools.constraint_solver import routing_enums_pb2
 
 from datetime import timedelta
 
+from pprint import pformat
+
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 
@@ -47,6 +49,9 @@ _capture_cache = dict()
 _dist_matrix = list()
 _time_matrix = list()
 _direct_dist_matrix = list()
+_smallest_triangle = None
+_largest_triangle = None
+_seen_subsets = list()
 
 # in metres per minute, only used in the absence of Google Maps API
 travel_speed = {
@@ -57,18 +62,18 @@ travel_speed = {
 }
 
 
-def getCacheDir():
+def get_cache_dir():
     home = str(Path.home())
     cachedir = os.path.join(home, '.cache', 'ingress-fieldmap')
     Path(cachedir).mkdir(parents=True, exist_ok=True)
     return cachedir
 
 
-def genDistanceMatrix(gmapskey=None, gmapsmode='walking'):
+def gen_distance_matrix(gmapskey=None, gmapsmode='walking'):
     global _dist_matrix
     global _direct_dist_matrix
 
-    cachedir = getCacheDir()
+    cachedir = get_cache_dir()
     distcachefile = os.path.join(cachedir, 'distcache')
     # Google Maps lookups are non-free, so cache them aggressively
     # TODO: Invalidate these somehow after a period?
@@ -151,50 +156,38 @@ def genDistanceMatrix(gmapskey=None, gmapsmode='walking'):
         _time_matrix.append(matrow_dur)
 
 
-def getPortalDistance(p1, p2, direct=False):
-    if active_graph is None:
-        mp1 = p1
-        mp2 = p2
-    else:
-        mp1 = active_graph.node[p1]['pos']
-        mp2 = active_graph.node[p2]['pos']
+def get_portal_distance(p1, p2, direct=False):
+    if active_graph is not None:
+        p1 = active_graph.node[p1]['pos']
+        p2 = active_graph.node[p2]['pos']
     if direct:
-        logger.debug('%s->%s=%s (direct)', combined_graph.node[mp1]['name'],
-                     combined_graph.node[mp2]['name'], _direct_dist_matrix[mp1][mp2])
-        return _direct_dist_matrix[mp1][mp2]
-    logger.debug('%s->%s=%s (gmap)', combined_graph.node[mp1]['name'],
-                 combined_graph.node[mp2]['name'], _dist_matrix[mp1][mp2])
-    return _dist_matrix[mp1][mp2]
+        return _direct_dist_matrix[p1][p2]
+    return _dist_matrix[p1][p2]
 
 
-def getPortalTime(p1, p2):
-    if active_graph is None:
-        mp1 = p1
-        mp2 = p2
-    else:
-        mp1 = active_graph.node[p1]['pos']
-        mp2 = active_graph.node[p2]['pos']
-    logger.debug('%s->%s=%s minutes (gmap)', combined_graph.node[mp1]['name'],
-                 combined_graph.node[mp2]['name'], _time_matrix[mp1][mp2])
-    return int(_time_matrix[mp1][mp2])
+def get_portal_time(p1, p2):
+    if active_graph is not None:
+        p1 = active_graph.node[p1]['pos']
+        p2 = active_graph.node[p2]['pos']
+    return int(_time_matrix[p1][p2])
 
 
-def populateGraphs(portals, waypoints):
+def populate_graphs(portals, waypoints):
     global combined_graph
     global portal_graph
     global waypoint_graph
     global active_graph
-    a = populateGraph(portals)
+    a = populate_graph(portals)
     # a graph with just portals
     portal_graph = a
     # Make a master graph that contains both portals and waypoints
     combined_graph = a.copy()
     if waypoints:
-        waypoint_graph = populateGraph(waypoints)
-        extendGraphWithWaypoints(combined_graph)
+        waypoint_graph = populate_graph(waypoints)
+        extend_graph_with_waypoints(combined_graph)
 
 
-def extendGraphWithWaypoints(a):
+def extend_graph_with_waypoints(a):
     if waypoint_graph is None:
         return
     master_num = portal_graph.order()
@@ -207,7 +200,7 @@ def extendGraphWithWaypoints(a):
         master_num += 1
 
 
-def populateGraph(portals):
+def populate_graph(portals):
     a = nx.DiGraph()
     locs = []
 
@@ -231,7 +224,7 @@ def populateGraph(portals):
     # gnomonic projection
     locs = geometry.e6LLtoRads(locs)
     xyz = geometry.radstoxyz(locs)
-    xy = geometry.gnomonicProj(locs,xyz)
+    xy = geometry.gnomonicProj(locs, xyz)
 
     for i in range(n):
         a.node[i]['pos'] = i
@@ -242,24 +235,35 @@ def populateGraph(portals):
     return a
 
 
-def makeLinkPlan(a):
+def make_workplan(a, cooling, maxmu, minap, is_subset=False):
+    global active_graph
+    global _capture_cache
+
     linkplan = [None] * a.size()
 
     for p, q in a.edges():
         linkplan[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']))
 
-    linkplan = fixPingPong(a, linkplan)
-    return linkplan
+    if minap:
+        stats = get_workplan_stats(linkplan, cooling)
+        if stats['ap'] < minap:
+            logger.debug('Plan does not have enough AP, abandon early')
+            return linkplan
 
+    # pre-optimize linkplan without the captures first
+    linkplan, stats = improve_workplan(a, linkplan, cooling, maxmu)
 
-def makeWorkPlan(a, linkplan, is_subset=False):
-    global active_graph
-    global _capture_cache
+    # Find the portals we need to capture
+    seen_portals = list()
+    captures_needed = list()
+    for p, q, f in linkplan:
+        if q not in seen_portals and q not in captures_needed:
+            captures_needed.append(q)
+        seen_portals.append(p)
 
     w_start = None
     w_end = None
 
-    all_p = list(range(a.order()))
     for i in range(a.order()):
         # skip non-special nodes
         if 'special' not in a.node[i]:
@@ -270,51 +274,55 @@ def makeWorkPlan(a, linkplan, is_subset=False):
         elif a.node[i]['special'] == '_w_end':
             w_end = i
 
-    if w_end is not None:
-        # Remove last item from all_p
-        all_p.pop()
-
     if w_start is None:
         # Find the portal that's furthest away from the starting portal
         maxdist = None
-        for i in range(a.order()):
-            # Don't consider the end waypoint
-            if w_end is not None and i == w_end:
-                continue
-            dist = getPortalDistance(0, i)
+        for p in captures_needed:
+            dist = get_portal_distance(linkplan[0][0], p)
             if maxdist is None or dist > maxdist:
-                w_start = i
+                w_start = p
                 maxdist = dist
 
-        logger.debug('Furthest from %s is %s', a.node[0]['name'], a.node[w_start]['name'])
+        logger.debug('Furthest from %s is %s', a.node[linkplan[0][0]]['name'], a.node[w_start]['name'])
 
-    # It would be nice to use ortools constraint-solver for pickup and deliveries,
-    # but it mostly segfaults for me, so use the TSP solver until ortools stops sucking
-    # seen_portals = list()
-    # for p, q, f in linkplan:
-    #     if q not in seen_portals:
-    #         order_constraints.append([q, p])
-    #     seen_portals.append(p)
-    cachekey = [w_start, linkplan[0][0]]
+    # Move w_start and w_end to start and end
+    if w_start in captures_needed:
+        captures_needed.remove(w_start)
+    captures_needed.insert(0, w_start)
+    if linkplan[0][0] in captures_needed:
+        captures_needed.remove(linkplan[0][0])
+    captures_needed.append(linkplan[0][0])
+
+    logger.debug('captures_needed: %s', captures_needed)
+
+    cachekey = list(captures_needed)
     if is_subset:
         subset_key = list()
         for n in range(a.order()):
             subset_key.append(a.node[n]['pos'])
         subset_key.sort()
         cachekey = cachekey + subset_key
-
     cachekey = tuple(cachekey)
-    logger.debug('cachekey=%s', cachekey)
 
     if cachekey not in _capture_cache:
         logger.debug('Capture cache miss, starting ortools calculation')
-        manager = pywrapcp.RoutingIndexManager(len(all_p), 1, w_start)
+        mapping = list()
+        or_dist_matrix = list()
+        for pp in captures_needed:
+            mapping.append(pp)
+            or_dist_matrix.append(list())
+            for pq in captures_needed:
+                pdist = get_portal_distance(pp, pq)
+                or_dist_matrix[len(mapping)-1].append(pdist)
+        logger.debug('or_dist_matrix:\n%s', pformat(or_dist_matrix))
+
+        manager = pywrapcp.RoutingIndexManager(len(captures_needed), 1, [0], [len(captures_needed)-1])
         routing = pywrapcp.RoutingModel(manager)
 
         def distance_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
-            return getPortalTime(from_node, to_node)
+            return or_dist_matrix[from_node][to_node]
 
         transit_callback_index = routing.RegisterTransitCallback(distance_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
@@ -336,7 +344,7 @@ def makeWorkPlan(a, linkplan, is_subset=False):
         dist_ordered = list()
         while not routing.IsEnd(index):
             node = manager.IndexToNode(index)
-            dist_ordered.append(node)
+            dist_ordered.append(mapping[node])
             index = assignment.Value(routing.NextVar(index))
 
         _capture_cache[cachekey] = dist_ordered
@@ -347,87 +355,37 @@ def makeWorkPlan(a, linkplan, is_subset=False):
             return None
         dist_ordered = _capture_cache[cachekey]
 
+    logger.debug('dist_ordered=%s', dist_ordered)
     a.captureplan = dist_ordered
 
     # Make a unified workplan
     workplan = []
-    p_captured = []
     for p in dist_ordered:
-        req_capture = True
-        for lp, lq, lf in linkplan:
-            # if we see p show up in lp before it shows up in lq,
-            # then it's a useless capture
-            if lq == p:
-                # We're making a link to it before we visit it, so
-                # keep it in the capture plan
-                break
-            if lp == p:
-                # We're coming back to it before linking to it, so don't
-                # capture it separately
-                a.fixes.append('rpost: removed useless capture of %s before (%s, %s, %s)' % (
-                               a.node[p]['name'], lp, lq, lf))
-                req_capture = False
-                break
-
-        if req_capture:
-            # Go through those already captured and
-            # see if we can move any non-field-making
-            # links in the linkplan to this position
-            links_moved = False
-            for cp in p_captured:
-                if (p, cp, 0) not in linkplan:
-                    continue
-                ploc = linkplan.index((p, cp, 0))
-                # don't move if we make any fields during our visit
-                # to that portal, to keep linking operations bunched
-                # up together.
-                fields_made = False
-                for nloc in range(ploc+1, len(linkplan)):
-                    if linkplan[nloc][0] != p:
-                        # moved to a different origin
-                        break
-                    if linkplan[nloc][2] > 0:
-                        # making a field, don't move this link
-                        fields_made = True
-                        break
-
-                if not fields_made:
-                    # Yes, found a link we can make early
-                    a.fixes.append('rpost: moved (%s, %s, 0) into capture plan' % (p, cp))
-                    workplan.append((p, cp, 0))
-                    linkplan.remove((p, cp, 0))
-                    links_moved = True
-
-            if not links_moved:
-                # Just capturing, then
-                workplan.append((p, None, 0))
-
-            p_captured.append(p)
-
+        workplan.append((p, None, 0))
     workplan.extend(linkplan)
-    workplan = fixPingPong(a, workplan)
     if w_end is not None:
         logger.debug('Adding end waypoint to the workplan')
         workplan.append((w_end, None, 0))
 
-    return workplan
+    workplan, stats = improve_workplan(a, workplan, cooling, maxmu)
+
+    return workplan, stats
 
 
-def getPortalsPerimeter(p1, p2, p3, direct=False):
-    s1 = getPortalDistance(p1, p2, direct=direct)
-    s2 = getPortalDistance(p2, p3, direct=direct)
-    s3 = getPortalDistance(p1, p3, direct=direct)
+def get_portals_perimeter(p1, p2, p3, direct=False):
+    s1 = get_portal_distance(p1, p2, direct=direct)
+    s2 = get_portal_distance(p2, p3, direct=direct)
+    s3 = get_portal_distance(p1, p3, direct=direct)
     perimeter = s1+s2+s3
     logger.debug('Triangle %s-%s-%s, perimeter: %s m', p1, p2, p3, perimeter)
 
     return perimeter
 
 
-def getPortalsArea(p1, p2, p3):
-    s1 = getPortalDistance(p1, p2, direct=True)
-    s2 = getPortalDistance(p2, p3, direct=True)
-    s3 = getPortalDistance(p1, p3, direct=True)
-    # Hero's formula for triangle area
+def get_portals_area(p1, p2, p3):
+    s1 = get_portal_distance(p1, p2, direct=True)
+    s2 = get_portal_distance(p2, p3, direct=True)
+    s3 = get_portal_distance(p1, p3, direct=True)
     s = (s1 + s2 + s3)/2
     try:
         area = int(np.sqrt(s * (s - s1) * (s - s2) * (s - s3)))
@@ -435,18 +393,31 @@ def getPortalsArea(p1, p2, p3):
         # Effectively, 0
         area = 0
     logger.debug('Triangle %s-%s-%s, area: %s m2', p1, p2, p3, area)
-
     return area
 
 
-def getWorkplanStats(a, workplan, cooling='rhs'):
-    totalap = a.order() * CAPTUREAP
+def reverse_edge(p, q):
+    logger.debug('Reversing %s->%s for a better plan', p, q)
+    attrs = active_graph.edges[p, q]
+    active_graph.add_edge(q, p, **attrs)
+    active_graph.remove_edge(p, q)
+
+
+def get_workplan_stats(workplan, cooling='rhs'):
+    workplan = remove_useless_captures(workplan)
+    totalap = active_graph.order() * CAPTUREAP
     totaldist = 0
-    totalarea = 0
     totaltime = 0
+    totalarea = 0
     traveltime = 0
     links = 0
     fields = 0
+
+    try:
+        totalarea = active_graph.totalarea
+        need_area = False
+    except AttributeError:
+        need_area = True
 
     prev_p = None
     plan_at = 0
@@ -482,10 +453,10 @@ def getWorkplanStats(a, workplan, cooling='rhs'):
                     totalkeys += 1
 
             if prev_p is not None:
-                duration = getPortalTime(prev_p, p)
+                duration = get_portal_time(prev_p, p)
                 totaltime += duration
                 traveltime += duration
-                dist = getPortalDistance(prev_p, p)
+                dist = get_portal_distance(prev_p, p)
                 if dist > 40:
                     totaldist += dist
 
@@ -507,10 +478,10 @@ def getWorkplanStats(a, workplan, cooling='rhs'):
             if needkeys and cooling != 'idkfa':
                 # We assume:
                 # - we get roughly 1.5 keys per each hack
-                # - we glyph-hack, meaning it takes about half minute per actual hack action
+                # - we glyph-hack, meaning it takes about a minute per actual hack action
                 needed_hacks = int((needkeys/1.5) + (needkeys % 1.5))
                 # Hacking time
-                totaltime += needed_hacks/2
+                totaltime += needed_hacks
                 if cooling == 'none':
                     # uh-oh, no cooling?
                     totaltime += cooltime['none']*(needed_hacks-1)
@@ -537,9 +508,16 @@ def getWorkplanStats(a, workplan, cooling='rhs'):
 
         fields += f
         totalap += FIELDAP*f
-        for t in a.edges[p, q]['fields']:
-            area = getPortalsArea(t[0], t[1], t[2])
-            totalarea += area
+
+        # Total area of a graph doesn't change regardless of the order
+        # of linking and fielding, so calculate it only once.
+        if need_area:
+            for t in active_graph.edges[p, q]['fields']:
+                area = get_portals_area(t[0], t[1], t[2])
+                totalarea += area
+
+    if need_area:
+        active_graph.totalarea = totalarea
 
     stats = {
         'time': totaltime,
@@ -555,194 +533,196 @@ def getWorkplanStats(a, workplan, cooling='rhs'):
         'appmin': int(totalap/totaltime),
     }
 
+    logger.debug('stats: %s', stats)
+
     return stats
 
 
-def fixPingPong(a, workplan):
-    # avoid this stupid single-portal pingpong:
-    #   at portal_a
-    #   portal_b -> portal_a
-    #   at portal_x
-    # This should be optimized into:
-    #   at portal_a
-    #   portal_a -> portal_b
-    #   at portal_x
-    #
-    # Similarly:
-    #   at portal_x
-    #   portal_a -> portal_b
-    #   at portal_b
-    # should become:
-    #   at portal_x
-    #   portal_b -> portal_a
-    #   at portal_b
-    rcount = 0
-    while True:
-        improved = False
-        rcount += 1
-        seen = [workplan[0][0]]
+def workplan_is_better(orig_stats, new_stats, maxmu):
+    if maxmu:
+        if new_stats['sqmpmin'] > orig_stats['sqmpmin']:
+            logger.debug('old best: %s, new best: %s', orig_stats['sqmpmin'], new_stats['sqmpmin'])
+            logger.debug('New plan has better coverage')
+            return True
+        logger.debug('New plan is not better')
+        return False
 
-        for i in range(1, len(workplan)-1):
-            p, q, f = workplan[i]
-
-            prev_origin = workplan[i-1][0]
-            if prev_origin != p:
-                if prev_origin not in seen:
-                    seen.append(prev_origin)
-
-                if p not in seen:
-                    # Don't consider portals we're still capturing
-                    continue
-
-                # we moved to a new origin
-                # skip if next step makes no links
-                if workplan[i+1][1] is None:
-                    continue
-
-                next_origin = workplan[i+1][0]
-                reverse_edge = False
-                if (next_origin == q or prev_origin == q) and a.out_degree(q) < 8:
-                    reverse_edge = True
-                    a.fixes.append('r%d: fixed ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
-
-                # if prev_origin == q and next_origin == prev_origin:
-                #     reverse_edge = True
-                #     a.fixes.append('r%d: fixed exact ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
-                # Turn off distance-based pingpong fixes for now
-                # we are already catching them by the blunt logic above
-                # else:
-                #    dist_to_prev = getPortalDistance(prev_origin, p)
-                #    dist_to_next = getPortalDistance(p, next_origin)
-                #    dist_prev_to_next = getPortalDistance(prev_origin, next_origin)
-                #    if next_origin == q and (dist_to_prev+dist_to_next)/2 > dist_prev_to_next:
-                #        reverse_edge = True
-                #        a.fixes.append('r%d: fixed inefficient ping-pong %s->%s->%s' % (rcount, prev_origin, p, next_origin))
-
-                if reverse_edge:
-                    improved = True
-                    # reverse this link
-                    attrs = a.edges[p, q]
-                    a.add_edge(q, p, **attrs)
-                    a.remove_edge(p, q)
-                    workplan[i] = (q, p, f)
-
-        if not improved:
-            logger.debug('No further pingpong improvements found.')
-            break
-
-    return workplan
+    if new_stats['appmin'] > orig_stats['appmin']:
+        logger.debug('old best: %s, new best: %s', orig_stats['appmin'], new_stats['appmin'])
+        logger.debug('New plan has better AP score')
+        return True
+    logger.debug('New plan is not better')
+    return False
 
 
-def improveEdgeOrder(a):
-    m = a.size()
-    linkplan = [-1] * m
-
-    for p, q in a.edges():
-        linkplan[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']))
-    # Stick original plan into a for debug purposes
-    a.orig_linkplan = list(linkplan)
+def improve_workplan(a, workplan, cooling, maxmu):
+    a.orig_workplan = list(workplan)
     a.fixes = list()
-
-    prev_origin = None
+    rcount = 0
+    current_stats = get_workplan_stats(workplan, cooling)
     fielders_moved = False
-    seen_origins = list()
-    prev_origin_created_fields = False
-    z = None
-    # This moves non-fielding origins closer to other portals
-    for i in range(m):
-        p, q, f = linkplan[i]
-        # If both the origin and the target are in seen_origins, then
-        # flipping the link will probably give us a more efficient
-        # fielding plan
-        reverse_edge = False
-        if p in seen_origins and q in seen_origins and f < 2:
-            reverse_edge = True
-
-        # If we haven't visited this target yet, but will in the future,
-        # we're better off reversing the link
-        if q not in seen_origins and m - i > 1 and f < 2:
+    while True:
+        rcount += 1
+        logger.debug('Starting improve_workplan round %s', rcount)
+        logger.debug('Current workplan:\n%s', pformat(workplan))
+        m = len(workplan)-1
+        visited_origins = [workplan[0][0]]
+        reordered = False
+        improved = False
+        for i in range(m):
+            logger.debug('Workplan is at %s: %s', i, workplan[i])
+            p, q, f = workplan[i]
+            if p not in visited_origins:
+                visited_origins.append(p)
+            # we moved to a new origin
+            # Find all actions involving this origin
+            # and any of the visited origins where the number
+            # of fields is fewer than 2
             for j in range(i+1, m):
-                if linkplan[j][0] == q:
-                    reverse_edge = True
-                    break
+                jp, jq, jf = workplan[j]
+                # We don't touch links that create 2 fields,
+                # because we cannot move or reverse them.
+                if jf > 1:
+                    continue
+                if jp != p and jq != p:
+                    continue
+                if jp not in visited_origins or jq not in visited_origins:
+                    continue
+                # If previous origin and next origin are same, then we don't
+                # need to do anything
+                if m-j > 2 and workplan[j-1][0] == jp and workplan[j+1][0] == jp:
+                    continue
 
-        if reverse_edge and a.out_degree(q) < 8:
-            attrs = a.edges[p, q]
-            a.add_edge(q, p, **attrs)
-            a.remove_edge(p, q)
-            linkplan[i] = (q, p, f)
-            a.fixes.append('reversed %s->%s:' % (p, q))
-            if f:
-                fielders_moved = True
-            # Send us for another loop on this
-            i -= 1
+                logger.debug('Improvement candidate: %s', workplan[j])
+                # Move non-fielding edges to happen at capture stage, if that's better
+                if jf == 0:
+                    if p == jp:
+                        # See if moving this edge will be better
+                        nwp = list(workplan)
+                        del(nwp[j])
+                        if q is None:
+                            del(nwp[i])
+                            newpos = i
+                        else:
+                            newpos = i+1
+                        nwp.insert(newpos, (jp, jq, jf))
+                        new_stats = get_workplan_stats(nwp, cooling)
+                        if workplan_is_better(current_stats, new_stats, maxmu):
+                            # Replace current capture with this edge
+                            a.fixes.append('R%s: Moved %s to %s' % (rcount, workplan[j], newpos))
+                            logger.debug(a.fixes[-1])
+                            workplan = nwp
+                            current_stats = new_stats
+                            improved = reordered = True
+                            break
+                    if p == jq and a.out_degree(jq) < 8:
+                        # Reverse and move this edge to see if it's better
+                        nwp = list(workplan)
+                        del(nwp[j])
+                        if q is None:
+                            del(nwp[i])
+                            newpos = i
+                        else:
+                            newpos = i+1
+                        nwp.insert(newpos, (jq, jp, jf))
+                        new_stats = get_workplan_stats(nwp, cooling)
+                        if workplan_is_better(current_stats, new_stats, maxmu):
+                            a.fixes.append('R%s: Reversed and moved %s to %s' % (rcount, workplan[j], newpos))
+                            logger.debug(a.fixes[-1])
+                            workplan = nwp
+                            current_stats = new_stats
+                            reverse_edge(jp, jq)
+                            improved = reordered = True
+                            break
+
+                # This action creates one field, so we can't move it in the workplan
+                elif jf == 1 and a.out_degree(jq) < 8:
+                    # Try reversing this link in place to see if we get a better plan
+                    nwp = list(workplan)
+                    nwp[j] = (jq, jp, jf)
+                    new_stats = get_workplan_stats(nwp, cooling)
+                    if workplan_is_better(current_stats, new_stats, maxmu):
+                        a.fixes.append('R%s: In-place reversed %s at %s' % (rcount, workplan[j], j))
+                        logger.debug(a.fixes[-1])
+                        reverse_edge(jp, jq)
+                        workplan = nwp
+                        current_stats = new_stats
+                        fielders_moved = True
+                        improved = True
+
+            if reordered:
+                break
+
+        if reordered:
+            logger.debug('Plan was reordered, restart the loop')
             continue
 
-        if prev_origin != p:
-            # we moved to a new origin
-            if p not in seen_origins:
-                seen_origins.append(p)
+        logger.debug('Reached the end of the workplan')
+        if not improved:
+            logger.debug('No further improvements found')
+            break
 
-            # If the target is in seen_origins, then we flip the link
-            # around and move it to happen
-            if z and not prev_origin_created_fields:
-                # previous origin didn't create any fields, so move it
-                # to happen right before the same (or closest) portal
-                # that we've already been to before
-                closest_node_pos = 0
-                shortest_hop = None
-                for j in range(0, z):
-                    if linkplan[j][0] == prev_origin:
-                        # Found exact match
-                        closest_node_pos = j
-                        break
+        # Run it again, Stan!
+        logger.debug('Plan was improved, going for another loop')
 
-                    dist = getPortalDistance(linkplan[j][0], prev_origin)
-                    if shortest_hop is None or dist <= shortest_hop:
-                        shortest_hop = dist
-                        closest_node_pos = j
+    workplan = remove_useless_captures(workplan)
 
-                if closest_node_pos < 0:
-                    closest_node_pos = 0
-
-                a.fixes.append('moved above %s:' % str(linkplan[closest_node_pos]))
-                for row in linkplan[z:i]:
-                    a.fixes.append('     %s' % str(row))
-                linkplan = (linkplan[:closest_node_pos] +
-                            linkplan[z:i] +
-                            linkplan[closest_node_pos:z] +
-                            linkplan[i:])
-
-            prev_origin = p
-            prev_origin_created_fields = False
-            z = i
-
-        # Only move those that don't complete fields
-        if f:
-            prev_origin_created_fields = True
-
+    logger.debug('Renumbering links')
     # Record the new order of edges
-    for i in range(m):
-        p, q, f = linkplan[i]
-        a.edges[p, q]['order'] = i
+    fc = 0
+    for i in range(a.size()):
+        p, q, f = workplan[i]
+        if q is None:
+            continue
+        a.edges[p, q]['order'] = fc
+        fc += 1
         if fielders_moved:
             a.edges[p, q]['fields'] = list()
 
     if fielders_moved:
-        # Recalculate fields
+        logger.debug('Recalculating fields')
         for t in a.triangulation:
             t.markEdgesWithFields()
 
     # Stick linkplan into a for debugging purposes
-    a.linkplan = linkplan
+    a.workplan = workplan
+    logger.debug('Final workplan:\n%s', pformat(workplan))
+    stats = get_workplan_stats(workplan, cooling)
+    logger.debug('Final stats:\n%s', pformat(stats))
+
+    return workplan, stats
 
 
-def removeSince(a, m, t):
+def remove_useless_captures(workplan):
+    final = list()
+    pos = 0
+    for p, q, f in workplan:
+        if q is None:
+            useless = False
+            # Are we going to visit this portal again before we link to it?
+            for fp, fq, ff in workplan[pos+1:]:
+                if fp == p:
+                    # Yes, it's useless
+                    logger.debug('Removing useless capture at pos %s: %s', pos, workplan[pos])
+                    useless = True
+                    break
+                if fq == p:
+                    # Yes, we'll link to it before we come back
+                    break
+            if useless:
+                pos += 1
+                continue
+        final.append(workplan[pos])
+        pos += 1
+    return final
+
+
+def remove_since(a, m, t):
     # Remove all but the first m edges from a (and .edge_stck)
     # Remove all but the first t Triangules from a.triangulation
     for i in range(len(a.edgeStack) - m):
-        p,q = a.edgeStack.pop()
-        a.remove_edge(p,q)
+        p, q = a.edgeStack.pop()
+        a.remove_edge(p, q)
         logger.debug('removing, p=%s, q=%s', p, q)
         logger.debug('edgeStack follows')
         logger.debug(a.edgeStack)
@@ -765,28 +745,28 @@ def triangulate(a, perim):
         return True
 
     try:
-        startStackLen = len(a.edgeStack)
+        start_stack_len = len(a.edgeStack)
     except AttributeError:
-        startStackLen = 0
+        start_stack_len = 0
         a.edgeStack = []
     try:
-        startTriLen = len(a.triangulation)
+        start_tri_len = len(a.triangulation)
     except AttributeError:
-        startTriLen = 0
+        start_tri_len = 0
         a.triangulation = []
 
     # Try all triangles using perim[0:2] and another perim node
     for i in np.random.permutation(range(2, pn)):
 
         for j in range(TRIES_PER_TRI):
-            t0 = Triangle(perim[[0,1,i]], a, True)
+            t0 = Triangle(perim[[0, 1, i]], a, True)
             t0.findContents()
             t0.randSplit()
             try:
                 t0.buildGraph()
-            except Deadend as d:
+            except Deadend:
                 # remove the links formed since beginning of loop
-                removeSince(a,startStackLen, startTriLen)
+                remove_since(a, start_stack_len, start_tri_len)
             else:
                 # This build was successful. Break from the loop
                 break
@@ -794,15 +774,15 @@ def triangulate(a, perim):
             # The loop ended "normally" so this triangle failed
             continue
 
-        if not triangulate(a,perim[range(1,i   +1   )]): # 1 through i
+        if not triangulate(a, perim[range(1, i+1)]):
             # remove the links formed since beginning of loop
-            removeSince(a,startStackLen, startTriLen)
+            remove_since(a, start_stack_len, start_tri_len)
             continue
 
-        if not triangulate(a,perim[range(0,i-pn-1,-1)]): # i through 0
-           # remove the links formed since beginning of loop
-           removeSince(a,startStackLen,startTriLen)
-           continue
+        if not triangulate(a, perim[range(0, i-pn-1, -1)]):
+            # remove the links formed since beginning of loop
+            remove_since(a, start_stack_len, start_tri_len)
+            continue
 
         # This will be a list of the first generation triangles
         a.triangulation.append(t0)
@@ -816,65 +796,69 @@ def triangulate(a, perim):
     return False
 
 
-def makeSubset(minportals, maxmu=False):
-    # Grab three random portals from the list
-    #subset = random.sample(range(portal_graph.order()), 3)
+def make_subset(minportals, maxmu=False):
     global active_graph
-    subset = None
-    sseed = None
-    sperim = None
-    active_graph = None
-    for p1 in range(portal_graph.order()):
-        for p2 in range(p1+1, portal_graph.order()):
-            if subset is not None:
-                break
-            for p3 in range(p2+1, portal_graph.order()):
-                if subset is not None:
-                    break
-                perim = getPortalsPerimeter(p1, p2, p3)
-                if maxmu:
-                    # Looking for the largest triangle
-                    if sperim is None or perim > sperim:
-                        sseed = [p1, p2, p3]
-                else:
-                    # Looking for the smallest triangle
-                    if perim <= 0:
-                        # This is good enough
-                        subset = [p1, p2, p3]
-                        break
+    global _smallest_triangle
+    global _largest_triangle
+
+    if _smallest_triangle is None:
+        # for smallest, we look for a triangle with the shortest perimeter
+        # for largest, we look for a triangle with the largest area
+        sperim = None
+        larea = None
+        active_graph = None
+        for p1 in range(portal_graph.order()):
+            for p2 in range(p1+1, portal_graph.order()):
+                for p3 in range(p2+1, portal_graph.order()):
+                    area = get_portals_area(p1, p2, p3)
+                    perim = get_portals_perimeter(p1, p2, p3)
+                    if larea is None or area > larea:
+                        _largest_triangle = (p1, p2, p3)
                     if sperim is None or perim < sperim:
-                        sseed = [p1, p2, p3]
-                        sperim = perim
-    if subset is None:
-        subset = sseed
+                        _smallest_triangle = (p1, p2, p3)
+
+    if maxmu:
+        subset = list(_largest_triangle)
+    else:
+        subset = list(_smallest_triangle)
     # Add portals until we get to minportals
     while len(subset) < minportals:
-        addSubsetPortal(subset, maxmu)
+        add_subset_portal(subset, maxmu)
     return subset
 
 
-def addSubsetPortal(subset, maxmu=False):
+def add_subset_portal(subset, maxmu=False):
+    global _seen_subsets
+    allp = list(range(portal_graph.order()))
+    missing = [x for x in allp if x not in subset]
+    if not missing:
+        return
+    if maxmu:
+        maxtry = 0
+        while True:
+            candidate = np.random.choice(missing)
+            subset.append(candidate)
+            if maxtry > 10 or subset not in _seen_subsets:
+                _seen_subsets.append(list(subset))
+                break
+            subset.pop()
+            maxtry += 1
+        return
+
     candidate = None
     slen = None
-    for i in range(portal_graph.order()):
-        if i in subset:
-            continue
+    for i in missing:
         mylen = 0
         for p in subset:
-            mylen += getPortalDistance(p, i)
-        if maxmu:
-            if slen is None or mylen > slen:
-                candidate = i
-                slen = mylen
-        else:
-            if slen is None or mylen < slen:
-                candidate = i
-                slen = mylen
+            mylen += get_portal_distance(p, i)
+        if slen is None or mylen < slen:
+            candidate = i
+            slen = mylen
     if candidate is not None:
         subset.append(candidate)
 
 
-def makeSubsetGraph(subset):
+def make_subset_graph(subset):
     subset.sort()
     b = nx.DiGraph()
     ct = 0
@@ -885,7 +869,7 @@ def makeSubsetGraph(subset):
     return b
 
 
-def maxFields(a):
+def max_fields(a):
     n = a.order()
     # Generate a distance matrix for all portals
     pts = np.array([a.node[i]['xy'] for i in range(n)])
@@ -898,7 +882,7 @@ def maxFields(a):
     return True
 
 
-def genCacheKey(mode, maxmu, timelimit):
+def gen_cache_key(mode, maxmu, cooling, timelimit):
     plls = list()
     a = combined_graph
     for m in range(a.order()):
@@ -910,6 +894,8 @@ def genCacheKey(mode, maxmu, timelimit):
     cachekey = mode
     if maxmu:
         cachekey += '+maxmu'
+    if cooling != 'rhs':
+        cachekey += '+%s' % cooling
     if timelimit:
         cachekey += '+timelimit-%s' % timelimit
     cachekey += '-%s' % phash
@@ -917,13 +903,13 @@ def genCacheKey(mode, maxmu, timelimit):
     return cachekey
 
 
-def saveCache(bestgraph, bestplan, mode, maxmu, timelimit):
+def save_cache(bestgraph, bestplan, mode, maxmu, cooling, timelimit):
     # let's cache processing results for the same portals, just so
     # we can "add more cycles" to existing best plans
     # We use portal pll coordinates to generate the cache file key
     # and dump a in there.
-    cachekey = genCacheKey(mode, maxmu, timelimit)
-    cachedir = getCacheDir()
+    cachekey = gen_cache_key(mode, maxmu, cooling, timelimit)
+    cachedir = get_cache_dir()
     plancachedir = os.path.join(cachedir, 'plans')
     Path(plancachedir).mkdir(parents=True, exist_ok=True)
     cachefile = os.path.join(plancachedir, cachekey)
@@ -934,11 +920,11 @@ def saveCache(bestgraph, bestplan, mode, maxmu, timelimit):
     wc.close()
 
 
-def loadCache(mode, maxmu, timelimit):
+def load_cache(mode, maxmu, cooling, timelimit):
     global active_graph
 
-    cachekey = genCacheKey(mode, maxmu, timelimit)
-    cachedir = getCacheDir()
+    cachekey = gen_cache_key(mode, maxmu, cooling, timelimit)
+    cachedir = get_cache_dir()
     plancachedir = os.path.join(cachedir, 'plans')
     cachefile = os.path.join(plancachedir, cachekey)
     bestgraph = None
@@ -954,5 +940,3 @@ def loadCache(mode, maxmu, timelimit):
 
     active_graph = bestgraph
     return bestgraph, bestplan
-
-
