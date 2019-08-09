@@ -248,7 +248,7 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
         stats = get_workplan_stats(linkplan, cooling)
         if stats['ap'] < minap:
             logger.debug('Plan does not have enough AP, abandon early')
-            return linkplan
+            return linkplan, stats
 
     # pre-optimize linkplan without the captures first
     linkplan, stats = improve_workplan(a, linkplan, cooling, maxmu)
