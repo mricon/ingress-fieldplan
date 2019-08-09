@@ -635,23 +635,23 @@ def improve_workplan(a, workplan, cooling, maxmu):
                             improved = reordered = True
                             break
 
-                # This action creates one field, so we can't move it in the workplan
-                elif jf == 1 and a.out_degree(jq) < 8:
-                    # Try reversing this link in place to see if we get a better plan
-                    nwp = list(workplan)
-                    nwp[j] = (jq, jp, jf)
-                    new_stats = get_workplan_stats(nwp, cooling)
-                    if workplan_is_better(current_stats, new_stats, maxmu):
-                        a.fixes.append('R%s: In-place reversed %s at %s' % (rcount, workplan[j], j))
-                        logger.debug(a.fixes[-1])
-                        reverse_edge(jp, jq)
-                        workplan = nwp
-                        current_stats = new_stats
-                        fielders_moved = True
-                        improved = True
-
             if reordered:
                 break
+
+            # This action creates one field, so we can't move it in the workplan
+            elif f == 1 and a.out_degree(q) < 8:
+                # Try reversing this link in place to see if we get a better plan
+                nwp = list(workplan)
+                nwp[i] = (q, p, f)
+                new_stats = get_workplan_stats(nwp, cooling)
+                if workplan_is_better(current_stats, new_stats, maxmu):
+                    a.fixes.append('R%s: In-place reversed %s at %s' % (rcount, workplan[i], i))
+                    logger.debug(a.fixes[-1])
+                    reverse_edge(p, q)
+                    workplan = nwp
+                    current_stats = new_stats
+                    fielders_moved = True
+                    improved = True
 
         if reordered:
             logger.debug('Plan was reordered, restart the loop')
