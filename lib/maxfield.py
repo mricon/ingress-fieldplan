@@ -296,6 +296,7 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
     logger.debug('captures_needed: %s', captures_needed)
 
     cachekey = list(captures_needed)
+    cachekey.sort()
     if is_subset:
         subset_key = list()
         for n in range(a.order()):
@@ -314,7 +315,7 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
             for pq in captures_needed:
                 pdist = get_portal_distance(pp, pq)
                 or_dist_matrix[len(mapping)-1].append(pdist)
-        logger.debug('or_dist_matrix:\n%s', pformat(or_dist_matrix))
+        # logger.debug('or_dist_matrix:\n%s', pformat(or_dist_matrix))
 
         manager = pywrapcp.RoutingIndexManager(len(captures_needed), 1, [0], [len(captures_needed)-1])
         routing = pywrapcp.RoutingModel(manager)
@@ -564,7 +565,7 @@ def improve_workplan(a, workplan, cooling, maxmu):
     while True:
         rcount += 1
         logger.debug('Starting improve_workplan round %s', rcount)
-        logger.debug('Current workplan:\n%s', pformat(workplan))
+        # logger.debug('Current workplan:\n%s', pformat(workplan))
         m = len(workplan)-1
         visited_origins = [workplan[0][0]]
         reordered = False
@@ -686,9 +687,9 @@ def improve_workplan(a, workplan, cooling, maxmu):
 
     # Stick linkplan into a for debugging purposes
     a.workplan = workplan
-    logger.debug('Final workplan:\n%s', pformat(workplan))
+    # logger.debug('Final workplan:\n%s', pformat(workplan))
     stats = get_workplan_stats(workplan, cooling)
-    logger.debug('Final stats:\n%s', pformat(stats))
+    # logger.debug('Final stats:\n%s', pformat(stats))
 
     return workplan, stats
 
@@ -804,17 +805,17 @@ def make_subset(minportals, maxmu=False):
     if _smallest_triangle is None:
         # for smallest, we look for a triangle with the shortest perimeter
         # for largest, we look for a triangle with the largest area
-        sperim = None
-        larea = None
+        sperim = np.inf
+        larea = 0
         active_graph = None
         for p1 in range(portal_graph.order()):
             for p2 in range(p1+1, portal_graph.order()):
                 for p3 in range(p2+1, portal_graph.order()):
                     area = get_portals_area(p1, p2, p3)
                     perim = get_portals_perimeter(p1, p2, p3)
-                    if larea is None or area > larea:
+                    if area > larea:
                         _largest_triangle = (p1, p2, p3)
-                    if sperim is None or perim < sperim:
+                    if perim < sperim:
                         _smallest_triangle = (p1, p2, p3)
 
     if maxmu:

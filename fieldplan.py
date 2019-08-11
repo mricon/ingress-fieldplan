@@ -254,7 +254,6 @@ def main():
     logger.info('Finding an efficient plan that maximizes %s', beststr)
 
     failcount = 0
-    seenplans = list()
 
     s_best = mp.Value('I', best)
     s_counter = mp.Value('I', 0)
@@ -308,10 +307,6 @@ def main():
 
             if not success:
                 failcount += 1
-                continue
-            if workplan in seenplans:
-                # Already seen this plan, so don't consider it again. This is done
-                # to avoid pingpoings for best plan.
                 continue
 
             if not args.quiet:
