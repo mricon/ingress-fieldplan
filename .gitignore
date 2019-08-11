@@ -6,3 +6,4 @@ tmp_*
 *.swp
 credentials.json
 token.json
+*.iml

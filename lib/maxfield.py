@@ -45,13 +45,13 @@ portal_graph = None
 waypoint_graph = None
 active_graph = None
 
-_capture_cache = dict()
-_dist_matrix = list()
-_time_matrix = list()
-_direct_dist_matrix = list()
-_smallest_triangle = None
-_largest_triangle = None
-_seen_subsets = list()
+capture_cache = dict()
+dist_matrix = list()
+time_matrix = list()
+direct_dist_matrix = list()
+smallest_triangle = None
+largest_triangle = None
+seen_subsets = list()
 
 # in metres per minute, only used in the absence of Google Maps API
 travel_speed = {
@@ -70,8 +70,8 @@ def get_cache_dir():
 
 
 def gen_distance_matrix(gmapskey=None, gmapsmode='walking'):
-    global _dist_matrix
-    global _direct_dist_matrix
+    global dist_matrix
+    global direct_dist_matrix
 
     cachedir = get_cache_dir()
     distcachefile = os.path.join(cachedir, 'distcache')
@@ -151,9 +151,9 @@ def gen_distance_matrix(gmapskey=None, gmapsmode='walking'):
             matrow.append(dist)
             matrow_dur.append(duration)
 
-        _direct_dist_matrix.append(direct_matrow)
-        _dist_matrix.append(matrow)
-        _time_matrix.append(matrow_dur)
+        direct_dist_matrix.append(direct_matrow)
+        dist_matrix.append(matrow)
+        time_matrix.append(matrow_dur)
 
 
 def get_portal_distance(p1, p2, direct=False):
@@ -161,15 +161,15 @@ def get_portal_distance(p1, p2, direct=False):
         p1 = active_graph.node[p1]['pos']
         p2 = active_graph.node[p2]['pos']
     if direct:
-        return _direct_dist_matrix[p1][p2]
-    return _dist_matrix[p1][p2]
+        return direct_dist_matrix[p1][p2]
+    return dist_matrix[p1][p2]
 
 
 def get_portal_time(p1, p2):
     if active_graph is not None:
         p1 = active_graph.node[p1]['pos']
         p2 = active_graph.node[p2]['pos']
-    return int(_time_matrix[p1][p2])
+    return int(time_matrix[p1][p2])
 
 
 def populate_graphs(portals, waypoints):
@@ -237,7 +237,7 @@ def populate_graph(portals):
 
 def make_workplan(a, cooling, maxmu, minap, is_subset=False):
     global active_graph
-    global _capture_cache
+    global capture_cache
 
     linkplan = [None] * a.size()
 
@@ -305,7 +305,7 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
         cachekey = cachekey + subset_key
     cachekey = tuple(cachekey)
 
-    if cachekey not in _capture_cache:
+    if cachekey not in capture_cache:
         logger.debug('Capture cache miss, starting ortools calculation')
         mapping = list()
         or_dist_matrix = list()
@@ -338,7 +338,7 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
 
         if not assignment:
             logger.debug('Could not solve for these constraints, ignoring plan')
-            _capture_cache[cachekey] = None
+            capture_cache[cachekey] = None
             return None
 
         index = routing.Start(0)
@@ -348,13 +348,13 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
             dist_ordered.append(mapping[node])
             index = assignment.Value(routing.NextVar(index))
 
-        _capture_cache[cachekey] = dist_ordered
+        capture_cache[cachekey] = dist_ordered
     else:
         logger.debug('Capture cache hit')
-        if _capture_cache[cachekey] is None:
+        if capture_cache[cachekey] is None:
             logger.debug('Known unsolvable, ignoring')
             return None
-        dist_ordered = _capture_cache[cachekey]
+        dist_ordered = capture_cache[cachekey]
 
     logger.debug('dist_ordered=%s', dist_ordered)
     a.captureplan = dist_ordered
@@ -799,10 +799,10 @@ def triangulate(a, perim):
 
 def make_subset(minportals, maxmu=False):
     global active_graph
-    global _smallest_triangle
-    global _largest_triangle
+    global smallest_triangle
+    global largest_triangle
 
-    if _smallest_triangle is None:
+    if smallest_triangle is None:
         # for smallest, we look for a triangle with the shortest perimeter
         # for largest, we look for a triangle with the largest area
         sperim = np.inf
@@ -814,14 +814,14 @@ def make_subset(minportals, maxmu=False):
                     area = get_portals_area(p1, p2, p3)
                     perim = get_portals_perimeter(p1, p2, p3)
                     if area > larea:
-                        _largest_triangle = (p1, p2, p3)
+                        largest_triangle = (p1, p2, p3)
                     if perim < sperim:
-                        _smallest_triangle = (p1, p2, p3)
+                        smallest_triangle = (p1, p2, p3)
 
     if maxmu:
-        subset = list(_largest_triangle)
+        subset = list(largest_triangle)
     else:
-        subset = list(_smallest_triangle)
+        subset = list(smallest_triangle)
     # Add portals until we get to minportals
     while len(subset) < minportals:
         add_subset_portal(subset, maxmu)
@@ -829,7 +829,7 @@ def make_subset(minportals, maxmu=False):
 
 
 def add_subset_portal(subset, maxmu=False):
-    global _seen_subsets
+    global seen_subsets
     allp = list(range(portal_graph.order()))
     missing = [x for x in allp if x not in subset]
     if not missing:
@@ -839,8 +839,8 @@ def add_subset_portal(subset, maxmu=False):
         while True:
             candidate = np.random.choice(missing)
             subset.append(candidate)
-            if maxtry > 10 or subset not in _seen_subsets:
-                _seen_subsets.append(list(subset))
+            if maxtry > 10 or subset not in seen_subsets:
+                seen_subsets.append(list(subset))
                 break
             subset.pop()
             maxtry += 1
