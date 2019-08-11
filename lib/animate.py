@@ -35,6 +35,37 @@ def draw_edge(a, s, t, fig, marker, directional=False):
     return eart
 
 
+def make_json(a, outfile, faction):
+    import json
+    tint = {
+        'enl': '#51c34a',
+        'res': '#4aa8c3',
+    }
+    js = []
+    for p, q in a.edges():
+        for tri in a.edges[p, q]['fields']:
+            latlng = list()
+            for v in tri:
+                coords = a.node[v]['pll'].split(',')
+                latlng.append(
+                    {
+                        'lat': float(coords[0]),
+                        'lng': float(coords[1]),
+                    }
+                )
+            js.append(
+                {
+                    'type': 'polygon',
+                    'latLngs': latlng,
+                    'color': tint[faction],
+                }
+            )
+    with open(outfile, 'w') as jsout:
+        json.dump(js, jsout)
+
+    logger.info('Wrote json map dump into %s', outfile)
+
+
 def make_png_steps(a, workplan, outdir, faction, plotdpi=96):
     logger.info('Generating step-by-step pngs of the workplan')
     if not os.path.isdir(outdir):
@@ -76,7 +107,7 @@ def make_png_steps(a, workplan, outdir, faction, plotdpi=96):
                 ax.plot(p_coords[0], p_coords[1], 'go')
             if prev_p is not None:
                 # Show travel edge
-                dist = maxfield.getPortalDistance(prev_p, p)
+                dist = maxfield.get_portal_distance(prev_p, p)
                 torm = draw_edge(a, prev_p, p, ax, 'm:', directional=True)
                 if special == '_w_blocker':
                     action = 'Destroy blocker'

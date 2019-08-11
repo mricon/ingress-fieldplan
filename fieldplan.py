@@ -11,16 +11,13 @@ import multiprocessing as mp
 import time
 import queue
 
-import numpy as np
-np.seterr(divide='ignore', invalid='ignore')
-
 logger = logging.getLogger('fieldplan')
 
 # version number
 _V_ = '3.2.0'
 
 _maxfield_names = {'combined_graph', 'portal_graph', 'waypoint_graph', 'active_graph', 'capture_cache', 'dist_matrix',
-                   'time_matrix', 'direct_dist_matrix'}
+                   'time_matrix', 'direct_dist_matrix', 'smallest_triangle', 'largest_triangle', 'seen_subsets'}
 
 
 def push_maxfield_data(args):
@@ -44,13 +41,14 @@ def pop_maxfield_data(args):
 def queue_job(args, best, counter, ready_queue):
     nogood = 0
     # A bit of a magical number used for subsets
-    # (basically, 10% of iterations per subprocess)
-    nogood_max = int(args.iterations/10/args.maxcpus)
+    # (basically, 1% and 10% of all iterations)
+    nogood_max = int(args.iterations/100)
+    best_max = int(args.iterations/10)
     pop_maxfield_data(args)
     if args.maxtime:
         is_subset = True
-        subset = maxfield.makeSubset(3, args.maxmu)
-        mygraph = maxfield.makeSubsetGraph(subset)
+        subset = maxfield.make_subset(3, args.maxmu)
+        mygraph = maxfield.make_subset_graph(subset)
     else:
         is_subset = False
         subset = None
@@ -58,19 +56,15 @@ def queue_job(args, best, counter, ready_queue):
 
     failed = (False, None, None, None)
     bestmode = False
-    mycounter = 0
+    nogood_lim = nogood_max
 
     while True:
-        mycounter += 1
-        # Increment global counter by 10s to reduce lock contention
-        if mycounter >= 10:
-            with counter.get_lock():
-                counter.value += mycounter
-            mycounter = 0
+        with counter.get_lock():
+            counter.value += 1
 
         b = mygraph.copy()
 
-        success = maxfield.maxFields(b)
+        success = maxfield.max_fields(b)
         if not success:
             ready_queue.put(failed)
             continue
@@ -78,61 +72,71 @@ def queue_job(args, best, counter, ready_queue):
         for t in b.triangulation:
             t.markEdgesWithFields()
 
-        maxfield.extendGraphWithWaypoints(b)
+        maxfield.extend_graph_with_waypoints(b)
         maxfield.active_graph = b
 
-        maxfield.improveEdgeOrder(b)
-        linkplan = maxfield.makeLinkPlan(b)
-        workplan = maxfield.makeWorkPlan(b, linkplan, is_subset)
+        workplan, stats = maxfield.make_workplan(b, args.cooling, args.maxmu, args.minap, is_subset)
 
         if workplan is None:
             ready_queue.put(failed)
             continue
-
-        stats = maxfield.getWorkplanStats(b, workplan, cooling=args.cooling)
 
         if args.maxmu:
             mybest = stats['sqmpmin']
         else:
             mybest = stats['appmin']
 
+        is_best = False
+        if mybest > best.value:
+            is_best = True
+            bestmode = True
+            nogood_lim = best_max
+
         if args.maxtime:
-            if bestmode:
-                # In best mode, we just run the same graph in hopes to improve it
-                if nogood > nogood_max:
-                    # Couldn't improve on the best
-                    bestmode = False
-            elif args.minap is not None and stats['ap'] < args.minap:
+            accept = True
+            bad_time = False
+            bad_ap = False
+            # Try accepting overtime results in maxmu mode,
+            # otherwise we keep dumber plans as best
+            if not (bestmode and args.maxmu) and stats['time'] > args.maxtime:
+                bad_time = True
+            if args.minap is not None and stats['ap'] < args.minap:
+                bad_ap = True
+            if bad_ap:
+                bestmode = False
+                nogood_lim = nogood_max
+            if bad_ap or bad_time:
+                nogood += 1
+                accept = False
+
+            if nogood > nogood_lim:
+                # start from a brand new triangle
+                maxfield.active_graph = None
+                subset = maxfield.make_subset(3, args.maxmu)
+                mygraph = maxfield.make_subset_graph(subset)
+                bestmode = False
+                nogood_lim = nogood_max
+                nogood = 0
+                continue
+
+            if not bestmode and not bad_time:
                 # Add moar portals
                 maxfield.active_graph = None
-                maxfield.addSubsetPortal(subset, args.maxmu)
-                mygraph = maxfield.makeSubsetGraph(subset)
-                continue
-            elif stats['time'] > args.maxtime:
-                nogood += 1
-                if nogood > nogood_max:
-                    # start from a brand new random triangle
-                    subset = maxfield.makeSubset(3, args.maxmu)
-                    mygraph = maxfield.makeSubsetGraph(subset)
-                    nogood = 0
+                maxfield.add_subset_portal(subset, args.maxmu)
+                mygraph = maxfield.make_subset_graph(subset)
+
+            if not accept:
                 continue
 
-            maxfield.active_graph = None
-            maxfield.addSubsetPortal(subset, args.maxmu)
-            mygraph = maxfield.makeSubsetGraph(subset)
-
-        if mybest <= best.value:
+        if not is_best:
             nogood += 1
             continue
 
         with best.get_lock():
             best.value = mybest
-        with counter.get_lock():
-            counter.value = 0
+
         ready_queue.put((success, b, workplan, stats))
         nogood = 0
-        mycounter = 0
-        bestmode = True
 
 
 # noinspection PyUnresolvedReferences
@@ -144,7 +148,7 @@ def main():
 
     parser = argparse.ArgumentParser(description=description, prog='makePlan.py',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-i', '--iterations', type=int, default=10000,
+    parser.add_argument('-i', '--iterations', type=int, default=5000,
                         help='Number of iterations to perform. More iterations may improve '
                         'results, but will take longer to process.')
     parser.add_argument('-m', '--travelmode', default='walking',
@@ -177,6 +181,10 @@ def main():
                         help='Add debug information to the logfile')
     parser.add_argument('-q', '--quiet', action='store_true', default=False,
                         help='Only output errors to the stdout')
+    parser.add_argument('--no-plan-cache', dest='nocache', action='store_true', default=False,
+                        help='Do not load or save plan cache')
+    parser.add_argument('-j', '--jsonmap', default=None,
+                        help='Save the resulting map as IITC DrawTools json')
     # Obsolete options
     parser.add_argument('-b', '--beginfirst', action='store_true', default=False,
                         help='(Obsolete, use waypoints instead)')
@@ -235,15 +243,15 @@ def main():
         logger.critical('Must have more than 2 portals!')
         sys.exit(1)
 
-    maxfield.populateGraphs(portals, waypoints)
+    maxfield.populate_graphs(portals, waypoints)
 
-    maxfield.genDistanceMatrix(args.gmapskey, args.travelmode)
+    maxfield.gen_distance_matrix(args.gmapskey, args.travelmode)
 
-    if args.maxtime:
+    if args.maxtime or args.nocache:
         bestgraph = None
         bestplan = None
     else:
-        (bestgraph, bestplan) = maxfield.loadCache(args.travelmode, args.maxmu, args.maxtime)
+        (bestgraph, bestplan) = maxfield.load_cache(args.travelmode, args.maxmu, args.cooling, args.maxtime)
 
     if args.maxmu:
         beststr = 'm2/min'
@@ -259,7 +267,7 @@ def main():
     best = 0
 
     if bestgraph is not None:
-        beststats = maxfield.getWorkplanStats(bestgraph, bestplan)
+        beststats = maxfield.get_workplan_stats(bestplan)
         if args.maxmu:
             best = beststats['sqmpmin']
         else:
@@ -332,7 +340,7 @@ def main():
 
             if not args.quiet:
                 if bestkm is not None:
-                    sys.stdout.write('\r(      %s km, %s km2, %s portals, %s AP, %s %s, %s)            \n' % (
+                    sys.stdout.write('\r(      %s km, %s km2, %s portals, %s AP, %s %s, %s)              \n' % (
                         bestkm, bestsqkm, bestportals, bestap, best, beststr, nicetime))
 
             beststats = stats
@@ -363,10 +371,14 @@ def main():
 
     maxfield.active_graph = bestgraph
 
-    maxfield.saveCache(bestgraph, bestplan, args.travelmode, args.maxmu, args.maxtime)
+    if not args.nocache:
+        maxfield.save_cache(bestgraph, bestplan, args.travelmode, args.maxmu, args.cooling, args.maxtime)
 
     if args.plots:
         animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction, args.plotdpi)
+
+    if args.jsonmap:
+        animate.make_json(bestgraph, args.jsonmap, args.faction)
 
     gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, beststats, args.faction, args.travelmode, args.nosave)
 
