@@ -35,8 +35,9 @@ def draw_edge(a, s, t, fig, marker, directional=False):
     return eart
 
 
-def make_json(a, outfile, faction):
+def make_json(outfile, faction):
     import json
+    a = maxfield.active_graph
     tint = {
         'enl': '#51c34a',
         'res': '#4aa8c3',
@@ -66,17 +67,20 @@ def make_json(a, outfile, faction):
     logger.info('Wrote json map dump into %s', outfile)
 
 
-def make_png_steps(a, workplan, outdir, faction, plotdpi=96):
+def make_png_steps(workplan, outdir, faction, plotdpi=96):
     logger.info('Generating step-by-step pngs of the workplan')
     if not os.path.isdir(outdir):
         os.mkdir(outdir)
+
+    a = maxfield.active_graph
+    ap = maxfield.portal_graph
 
     c_grn = (0.0, 1.0, 0.0, 0.3)
     c_blu = (0.0, 0.0, 1.0, 0.3)
     c_red = (1.0, 0.0, 0.0, 0.5)
     c_inv = (0.0, 0.0, 0.0, 0.0)
 
-    portals = np.array([a.node[i]['xy'] for i in a.nodes()]).T
+    portals = np.array([ap.node[i]['xy'] for i in ap.nodes()]).T
 
     fig = plt.figure(figsize=(11, 8), dpi=plotdpi)
     frames = list()
@@ -90,32 +94,32 @@ def make_png_steps(a, workplan, outdir, faction, plotdpi=96):
     fig.savefig(filen)
     frames.append(filen)
 
-    p = prev_p = None
+    p = prev_p = prev_special = None
     seen_p = list()
     for p, q, f in workplan:
         if p != prev_p:
-            if 'special' in a.node[p]:
-                special = a.node[p]['special']
-            else:
-                special = None
             torm = list()
-            # Colour this node captured
-            p_coords = np.array(a.node[p]['xy']).T
-            if faction == 'res':
-                ax.plot(p_coords[0], p_coords[1], 'bo')
-            else:
-                ax.plot(p_coords[0], p_coords[1], 'go')
+            special = a.node[p]['special']
+            if special is None:
+                # Colour this node captured
+                p_coords = np.array(a.node[p]['xy']).T
+                if faction == 'res':
+                    ax.plot(p_coords[0], p_coords[1], 'bo')
+                else:
+                    ax.plot(p_coords[0], p_coords[1], 'go')
+
             if prev_p is not None:
                 # Show travel edge
-                dist = maxfield.get_portal_distance(prev_p, p)
-                torm = draw_edge(a, prev_p, p, ax, 'm:', directional=True)
                 if special == '_w_blocker':
                     action = 'Destroy blocker'
                 elif special in ('_w_start', '_w_end'):
                     action = 'Travel to waypoint'
                 else:
+                    if prev_special is None:
+                        torm = draw_edge(a, prev_p, p, ax, 'm:', directional=True)
                     action = 'Capture'
 
+                dist = maxfield.get_portal_distance(prev_p, p)
                 if p not in seen_p:
                     if dist > 40:
                         ax.set_title('%s %s (%s m)' % (action, a.node[p]['name'], dist), ha='center')
@@ -136,6 +140,7 @@ def make_png_steps(a, workplan, outdir, faction, plotdpi=96):
                 art.remove()
 
         prev_p = p
+        prev_special = special
         if p not in seen_p:
             seen_p.append(p)
 

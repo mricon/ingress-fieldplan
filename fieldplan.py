@@ -370,10 +370,10 @@ def main():
         maxfield.save_cache(bestgraph, bestplan, args.travelmode, args.maxmu, args.cooling, args.maxtime)
 
     if args.plots:
-        animate.make_png_steps(bestgraph, bestplan, args.plots, args.faction, args.plotdpi)
+        animate.make_png_steps(bestplan, args.plots, args.faction, args.plotdpi)
 
     if args.jsonmap:
-        animate.make_json(bestgraph, args.jsonmap, args.faction)
+        animate.make_json(args.jsonmap, args.faction)
 
     gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, beststats, args.faction, args.travelmode, args.nosave)
 

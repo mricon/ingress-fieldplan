@@ -253,14 +253,6 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
     # pre-optimize linkplan without the captures first
     linkplan, stats = improve_workplan(a, linkplan, cooling, maxmu)
 
-    # Find the portals we need to capture
-    seen_portals = list()
-    captures_needed = list()
-    for p, q, f in linkplan:
-        if q not in seen_portals and q not in captures_needed:
-            captures_needed.append(q)
-        seen_portals.append(p)
-
     w_start = None
     w_end = None
 
@@ -277,7 +269,7 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
     if w_start is None:
         # Find the portal that's furthest away from the starting portal
         maxdist = None
-        for p in captures_needed:
+        for p in range(a.order()):
             dist = get_portal_distance(linkplan[0][0], p)
             if maxdist is None or dist > maxdist:
                 w_start = p
@@ -285,18 +277,7 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
 
         logger.debug('Furthest from %s is %s', a.node[linkplan[0][0]]['name'], a.node[w_start]['name'])
 
-    # Move w_start and w_end to start and end
-    if w_start in captures_needed:
-        captures_needed.remove(w_start)
-    captures_needed.insert(0, w_start)
-    if linkplan[0][0] in captures_needed:
-        captures_needed.remove(linkplan[0][0])
-    captures_needed.append(linkplan[0][0])
-
-    logger.debug('captures_needed: %s', captures_needed)
-
-    cachekey = list(captures_needed)
-    cachekey.sort()
+    cachekey = [w_start, linkplan[0][0]]
     if is_subset:
         subset_key = list()
         for n in range(a.order()):
@@ -307,23 +288,14 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
 
     if cachekey not in capture_cache:
         logger.debug('Capture cache miss, starting ortools calculation')
-        mapping = list()
-        or_dist_matrix = list()
-        for pp in captures_needed:
-            mapping.append(pp)
-            or_dist_matrix.append(list())
-            for pq in captures_needed:
-                pdist = get_portal_distance(pp, pq)
-                or_dist_matrix[len(mapping)-1].append(pdist)
-        # logger.debug('or_dist_matrix:\n%s', pformat(or_dist_matrix))
 
-        manager = pywrapcp.RoutingIndexManager(len(captures_needed), 1, [0], [len(captures_needed)-1])
+        manager = pywrapcp.RoutingIndexManager(a.order(), 1, [w_start], [linkplan[0][0]])
         routing = pywrapcp.RoutingModel(manager)
 
         def distance_callback(from_index, to_index):
             from_node = manager.IndexToNode(from_index)
             to_node = manager.IndexToNode(to_index)
-            return or_dist_matrix[from_node][to_node]
+            return get_portal_distance(from_node, to_node)
 
         transit_callback_index = routing.RegisterTransitCallback(distance_callback)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
@@ -345,7 +317,7 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
         dist_ordered = list()
         while not routing.IsEnd(index):
             node = manager.IndexToNode(index)
-            dist_ordered.append(mapping[node])
+            dist_ordered.append(node)
             index = assignment.Value(routing.NextVar(index))
 
         capture_cache[cachekey] = dist_ordered
