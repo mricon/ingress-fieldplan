@@ -465,9 +465,12 @@ def get_workplan_stats(workplan):
             # IDKFA means you already have all the keys
             if needkeys and cooling != 'idkfa':
                 # We assume:
-                # - we get roughly 1.5 keys per each hack
+                # - we get roughly 1.5 keys per each hack (override with --keys-per-hack)
                 # - we glyph-hack, meaning it takes about a minute per actual hack action
-                needed_hacks = int((needkeys/1.5) + (needkeys % 1.5))
+                if keysperhack != 1:
+                    needed_hacks = int((needkeys/keysperhack) + (needkeys % keysperhack))
+                else:
+                    needed_hacks = needkeys
                 # Hacking time
                 totaltime += needed_hacks
                 if cooling == 'none':
