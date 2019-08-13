@@ -14,14 +14,20 @@ import queue
 logger = logging.getLogger('fieldplan')
 
 # version number
-_V_ = '3.2.0'
+_V_ = '3.3.0'
 
+# Used to push values into each process on platforms without
+# a proper fork ability
 _maxfield_names = {'combined_graph', 'portal_graph', 'waypoint_graph', 'active_graph', 'capture_cache', 'dist_matrix',
-                   'time_matrix', 'direct_dist_matrix', 'smallest_triangle', 'largest_triangle', 'seen_subsets'}
+                   'time_matrix', 'direct_dist_matrix', 'smallest_triangle', 'largest_triangle', 'seen_subsets',
+                   'maxmu', 'cooling', 'minap', 'keysperhack', 'travelmode', 'maxtime'}
+
+# Are we going to use spawn or fork?
+mp_method = mp.get_start_method(allow_none=False)
 
 
 def push_maxfield_data(args):
-    if sys.platform != 'win32':
+    if mp_method == 'fork':
         return
     source = vars(maxfield)
     dest = vars(args)
@@ -30,7 +36,7 @@ def push_maxfield_data(args):
 
 
 def pop_maxfield_data(args):
-    if sys.platform != 'win32':
+    if mp_method == 'fork':
         return
     source = vars(args)
     dest = vars(maxfield)
@@ -45,9 +51,10 @@ def queue_job(args, best, counter, ready_queue):
     nogood_max = int(args.iterations/100)
     best_max = int(args.iterations/10)
     pop_maxfield_data(args)
+
     if args.maxtime:
         is_subset = True
-        subset = maxfield.make_subset(3, args.maxmu)
+        subset = maxfield.make_subset(4)
         mygraph = maxfield.make_subset_graph(subset)
     else:
         is_subset = False
@@ -75,7 +82,7 @@ def queue_job(args, best, counter, ready_queue):
         maxfield.extend_graph_with_waypoints(b)
         maxfield.active_graph = b
 
-        workplan, stats = maxfield.make_workplan(b, args.cooling, args.maxmu, args.minap, is_subset)
+        workplan, stats = maxfield.make_workplan(b, is_subset)
 
         if workplan is None:
             ready_queue.put(failed)
@@ -112,7 +119,7 @@ def queue_job(args, best, counter, ready_queue):
             if nogood > nogood_lim:
                 # start from a brand new triangle
                 maxfield.active_graph = None
-                subset = maxfield.make_subset(3, args.maxmu)
+                subset = maxfield.make_subset(4)
                 mygraph = maxfield.make_subset_graph(subset)
                 bestmode = False
                 nogood_lim = nogood_max
@@ -122,7 +129,7 @@ def queue_job(args, best, counter, ready_queue):
             if not bestmode and not bad_time:
                 # Add moar portals
                 maxfield.active_graph = None
-                maxfield.add_subset_portal(subset, args.maxmu)
+                maxfield.add_subset_portal(subset)
                 mygraph = maxfield.make_subset_graph(subset)
 
             if not accept:
@@ -183,6 +190,8 @@ def main():
                         help='Only output errors to the stdout')
     parser.add_argument('--no-plan-cache', dest='nocache', action='store_true', default=False,
                         help='Do not load or save plan cache')
+    parser.add_argument('--keys-per-hack', dest='keysperhack', type=float, default=1.5,
+                        help='How many keys per hack action')
     parser.add_argument('-j', '--jsonmap', default=None,
                         help='Save the resulting map as IITC DrawTools json')
     # Obsolete options
@@ -239,19 +248,28 @@ def main():
     portals, waypoints = gsheets.get_portals_from_sheet(gs, args.sheetid)
     logger.info('Considering %d portals and %s waypoints', len(portals), len(waypoints))
 
+    # Stick some things into maxfield so we don't
+    # continuously pass them around as function args
+    maxfield.cooling = args.cooling
+    maxfield.maxmu = args.maxmu
+    maxfield.minap = args.minap
+    maxfield.keysperhack = args.keysperhack
+    maxfield.travelmode = args.travelmode
+    maxfield.maxtime = args.maxtime
+
     if len(portals) < 3:
         logger.critical('Must have more than 2 portals!')
         sys.exit(1)
 
     maxfield.populate_graphs(portals, waypoints)
 
-    maxfield.gen_distance_matrix(args.gmapskey, args.travelmode)
+    maxfield.gen_distance_matrix(args.gmapskey)
 
     if args.maxtime or args.nocache:
         bestgraph = None
         bestplan = None
     else:
-        (bestgraph, bestplan) = maxfield.load_cache(args.travelmode, args.maxmu, args.cooling, args.maxtime)
+        (bestgraph, bestplan) = maxfield.load_cache()
 
     if args.maxmu:
         beststr = 'm2/min'
@@ -280,6 +298,7 @@ def main():
     s_best = mp.Value('I', best)
     s_counter = mp.Value('I', 0)
 
+    # Needed for platforms without proper fork ability
     push_maxfield_data(args)
 
     ready_queue = mp.Queue(maxsize=10)
@@ -367,7 +386,7 @@ def main():
     maxfield.active_graph = bestgraph
 
     if not args.nocache:
-        maxfield.save_cache(bestgraph, bestplan, args.travelmode, args.maxmu, args.cooling, args.maxtime)
+        maxfield.save_cache(bestgraph, bestplan)
 
     if args.plots:
         animate.make_png_steps(bestplan, args.plots, args.faction, args.plotdpi)

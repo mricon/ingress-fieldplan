@@ -45,6 +45,13 @@ portal_graph = None
 waypoint_graph = None
 active_graph = None
 
+cooling = 'rhs'
+minap = np.inf
+keysperhack = 1.5
+maxmu = False
+travelmode = 'walking'
+maxtime = None
+
 capture_cache = dict()
 dist_matrix = list()
 time_matrix = list()
@@ -69,7 +76,7 @@ def get_cache_dir():
     return cachedir
 
 
-def gen_distance_matrix(gmapskey=None, gmapsmode='walking'):
+def gen_distance_matrix(gmapskey=None):
     global dist_matrix
     global direct_dist_matrix
 
@@ -113,7 +120,7 @@ def gen_distance_matrix(gmapskey=None, gmapsmode='walking'):
             p1pos = a.node[p1]['geo']
             p2pos = a.node[p2]['geo']
             dist = int(geometry.sphereDist(p1pos, p2pos)[0])
-            duration = int(dist/travel_speed[gmapsmode])
+            duration = int(dist/travel_speed[travelmode])
             direct_matrow.append(dist)
             logger.debug('%s -( %d )-> %s (Direct)', a.node[p1]['name'], dist, a.node[p2]['name'])
 
@@ -122,8 +129,8 @@ def gen_distance_matrix(gmapskey=None, gmapsmode='walking'):
             if dist > 40 and gmaps is not None:
                 p1pos = a.node[p1]['pll']
                 p2pos = a.node[p2]['pll']
-                dkey = '%s,%s,%s' % (p1pos, p2pos, gmapsmode)
-                rkey = '%s,%s,%s' % (p2pos, p1pos, gmapsmode)
+                dkey = '%s,%s,%s' % (p1pos, p2pos, travelmode)
+                rkey = '%s,%s,%s' % (p2pos, p1pos, travelmode)
                 dkey_dur = '%s_dur' % dkey
                 rkey_dur = '%s_dur' % rkey
 
@@ -131,22 +138,22 @@ def gen_distance_matrix(gmapskey=None, gmapsmode='walking'):
                     dist = _gmap_cache_db[dkey]
                     duration = _gmap_cache_db[dkey_dur]
                     logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'],
-                                 dist, a.node[p2]['name'], gmapsmode)
+                                 dist, a.node[p2]['name'], travelmode)
                 elif rkey in _gmap_cache_db and rkey_dur in _gmap_cache_db:
                     dist = _gmap_cache_db[rkey]
                     duration = _gmap_cache_db[rkey_dur]
                     logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'],
-                                 dist, a.node[p2]['name'], gmapsmode)
+                                 dist, a.node[p2]['name'], travelmode)
                 else:
                     # Perform the lookup
                     now = datetime.now()
-                    gdir = gmaps.directions(p1pos, p2pos, mode=gmapsmode, departure_time=now)
+                    gdir = gmaps.directions(p1pos, p2pos, mode=travelmode, departure_time=now)
                     dist = gdir[0]['legs'][0]['distance']['value']
                     duration = int(gdir[0]['legs'][0]['duration']['value']/60)
                     _gmap_cache_db[dkey] = dist
                     _gmap_cache_db[dkey_dur] = duration
                     logger.debug('%s -( %d )-> %s (Google/%s/lookup)', a.node[p1]['name'],
-                                 dist, a.node[p2]['name'], gmapsmode)
+                                 dist, a.node[p2]['name'], travelmode)
 
             matrow.append(dist)
             matrow_dur.append(duration)
@@ -235,7 +242,7 @@ def populate_graph(portals):
     return a
 
 
-def make_workplan(a, cooling, maxmu, minap, is_subset=False):
+def make_workplan(a, is_subset=False):
     global active_graph
     global capture_cache
 
@@ -244,14 +251,14 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
     for p, q in a.edges():
         linkplan[a.edges[p, q]['order']] = (p, q, len(a.edges[p, q]['fields']))
 
-    if minap:
-        stats = get_workplan_stats(linkplan, cooling)
+    if minap is not None:
+        stats = get_workplan_stats(linkplan)
         if stats['ap'] < minap:
             logger.debug('Plan does not have enough AP, abandon early')
             return linkplan, stats
 
     # pre-optimize linkplan without the captures first
-    linkplan, stats = improve_workplan(a, linkplan, cooling, maxmu)
+    linkplan, stats = improve_workplan(linkplan)
 
     w_start = None
     w_end = None
@@ -340,7 +347,7 @@ def make_workplan(a, cooling, maxmu, minap, is_subset=False):
         logger.debug('Adding end waypoint to the workplan')
         workplan.append((w_end, None, 0))
 
-    workplan, stats = improve_workplan(a, workplan, cooling, maxmu)
+    workplan, stats = improve_workplan(workplan)
 
     return workplan, stats
 
@@ -376,7 +383,7 @@ def reverse_edge(p, q):
     active_graph.remove_edge(p, q)
 
 
-def get_workplan_stats(workplan, cooling='rhs'):
+def get_workplan_stats(workplan):
     workplan = remove_useless_captures(workplan)
     totalap = active_graph.order() * CAPTUREAP
     totaldist = 0
@@ -394,16 +401,24 @@ def get_workplan_stats(workplan, cooling='rhs'):
 
     prev_p = None
     plan_at = 0
+    seen_p = list()
     for p, q, f in workplan:
         mp = combined_graph.node[p]['pos']
         plan_at += 1
 
         # Are we at a different location than the previous portal?
         if p != prev_p:
-            # We are at a new portal, so add 1 minute just because
+            # We are at a new portal, so add half a minute just because
             # it takes time to get positioned and get to the right
             # screen in the UI
-            totaltime += 1
+            totaltime += 0.5
+            # Are we capturing?
+            if p not in seen_p:
+                # Add half a minute for capturing, unless idkfa
+                if cooling != 'idkfa':
+                    totaltime += 0.5
+                seen_p.append(p)
+
             # How many keys do we need if/until we come back?
             ensurekeys = 0
             totalkeys = 0
@@ -511,7 +526,7 @@ def get_workplan_stats(workplan, cooling='rhs'):
     return stats
 
 
-def workplan_is_better(orig_stats, new_stats, maxmu):
+def workplan_is_better(orig_stats, new_stats):
     if maxmu:
         if new_stats['sqmpmin'] > orig_stats['sqmpmin']:
             logger.debug('old best: %s, new best: %s', orig_stats['sqmpmin'], new_stats['sqmpmin'])
@@ -528,11 +543,12 @@ def workplan_is_better(orig_stats, new_stats, maxmu):
     return False
 
 
-def improve_workplan(a, workplan, cooling, maxmu):
+def improve_workplan(workplan):
+    a = active_graph
     a.orig_workplan = list(workplan)
     a.fixes = list()
     rcount = 0
-    current_stats = get_workplan_stats(workplan, cooling)
+    current_stats = get_workplan_stats(workplan)
     fielders_moved = False
     while True:
         rcount += 1
@@ -579,8 +595,8 @@ def improve_workplan(a, workplan, cooling, maxmu):
                         else:
                             newpos = i+1
                         nwp.insert(newpos, (jp, jq, jf))
-                        new_stats = get_workplan_stats(nwp, cooling)
-                        if workplan_is_better(current_stats, new_stats, maxmu):
+                        new_stats = get_workplan_stats(nwp)
+                        if workplan_is_better(current_stats, new_stats):
                             # Replace current capture with this edge
                             a.fixes.append('R%s: Moved %s to %s' % (rcount, workplan[j], newpos))
                             logger.debug(a.fixes[-1])
@@ -598,8 +614,8 @@ def improve_workplan(a, workplan, cooling, maxmu):
                         else:
                             newpos = i+1
                         nwp.insert(newpos, (jq, jp, jf))
-                        new_stats = get_workplan_stats(nwp, cooling)
-                        if workplan_is_better(current_stats, new_stats, maxmu):
+                        new_stats = get_workplan_stats(nwp)
+                        if workplan_is_better(current_stats, new_stats):
                             a.fixes.append('R%s: Reversed and moved %s to %s' % (rcount, workplan[j], newpos))
                             logger.debug(a.fixes[-1])
                             workplan = nwp
@@ -616,8 +632,8 @@ def improve_workplan(a, workplan, cooling, maxmu):
                 # Try reversing this link in place to see if we get a better plan
                 nwp = list(workplan)
                 nwp[i] = (q, p, f)
-                new_stats = get_workplan_stats(nwp, cooling)
-                if workplan_is_better(current_stats, new_stats, maxmu):
+                new_stats = get_workplan_stats(nwp)
+                if workplan_is_better(current_stats, new_stats):
                     a.fixes.append('R%s: In-place reversed %s at %s' % (rcount, workplan[i], i))
                     logger.debug(a.fixes[-1])
                     reverse_edge(p, q)
@@ -660,7 +676,7 @@ def improve_workplan(a, workplan, cooling, maxmu):
     # Stick linkplan into a for debugging purposes
     a.workplan = workplan
     # logger.debug('Final workplan:\n%s', pformat(workplan))
-    stats = get_workplan_stats(workplan, cooling)
+    stats = get_workplan_stats(workplan)
     # logger.debug('Final stats:\n%s', pformat(stats))
 
     return workplan, stats
@@ -769,7 +785,7 @@ def triangulate(a, perim):
     return False
 
 
-def make_subset(minportals, maxmu=False):
+def make_subset(minportals):
     global active_graph
     global smallest_triangle
     global largest_triangle
@@ -796,11 +812,11 @@ def make_subset(minportals, maxmu=False):
         subset = list(smallest_triangle)
     # Add portals until we get to minportals
     while len(subset) < minportals:
-        add_subset_portal(subset, maxmu)
+        add_subset_portal(subset)
     return subset
 
 
-def add_subset_portal(subset, maxmu=False):
+def add_subset_portal(subset):
     global seen_subsets
     allp = list(range(portal_graph.order()))
     missing = [x for x in allp if x not in subset]
@@ -855,7 +871,7 @@ def max_fields(a):
     return True
 
 
-def gen_cache_key(mode, maxmu, cooling, timelimit):
+def gen_cache_key():
     plls = list()
     a = combined_graph
     for m in range(a.order()):
@@ -864,24 +880,24 @@ def gen_cache_key(mode, maxmu, cooling, timelimit):
     for pll in plls:
         h.update(pll.encode('utf-8'))
     phash = h.hexdigest()
-    cachekey = mode
+    cachekey = travelmode
     if maxmu:
         cachekey += '+maxmu'
     if cooling != 'rhs':
         cachekey += '+%s' % cooling
-    if timelimit:
-        cachekey += '+timelimit-%s' % timelimit
+    if maxtime:
+        cachekey += '+timelimit-%s' % maxtime
     cachekey += '-%s' % phash
 
     return cachekey
 
 
-def save_cache(bestgraph, bestplan, mode, maxmu, cooling, timelimit):
+def save_cache(bestgraph, bestplan):
     # let's cache processing results for the same portals, just so
     # we can "add more cycles" to existing best plans
     # We use portal pll coordinates to generate the cache file key
     # and dump a in there.
-    cachekey = gen_cache_key(mode, maxmu, cooling, timelimit)
+    cachekey = gen_cache_key()
     cachedir = get_cache_dir()
     plancachedir = os.path.join(cachedir, 'plans')
     Path(plancachedir).mkdir(parents=True, exist_ok=True)
@@ -893,10 +909,10 @@ def save_cache(bestgraph, bestplan, mode, maxmu, cooling, timelimit):
     wc.close()
 
 
-def load_cache(mode, maxmu, cooling, timelimit):
+def load_cache():
     global active_graph
 
-    cachekey = gen_cache_key(mode, maxmu, cooling, timelimit)
+    cachekey = gen_cache_key()
     cachedir = get_cache_dir()
     plancachedir = os.path.join(cachedir, 'plans')
     cachefile = os.path.join(plancachedir, cachekey)
