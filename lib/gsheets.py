@@ -259,6 +259,8 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     logger.info('Total workplan play time: %s (%s %s)',
                 stats['nicetime'], stats['nicetraveltime'], travelmode)
     logger.info('Total AP: %s (%s without capturing)', stats['ap'], stats['ap'] - (a.order()*maxfield.CAPTUREAP))
+    if stats['hs']:
+        logger.info('Total %s needed: %s', maxfield.cooling.upper(), stats['hs'])
     if nosave:
         logger.info('Not saving spreadsheet per request.')
         return

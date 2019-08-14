@@ -20,7 +20,7 @@ _V_ = '3.3.0'
 # a proper fork ability
 _maxfield_names = {'combined_graph', 'portal_graph', 'waypoint_graph', 'active_graph', 'capture_cache', 'dist_matrix',
                    'time_matrix', 'direct_dist_matrix', 'smallest_triangle', 'largest_triangle', 'seen_subsets',
-                   'maxmu', 'cooling', 'minap', 'keysperhack', 'travelmode', 'maxtime'}
+                   'maxmu', 'cooling', 'minap', 'keysperhack', 'travelmode', 'maxtime', 'coolthreshold'}
 
 # Are we going to use spawn or fork?
 mp_method = mp.get_start_method(allow_none=False)
@@ -192,6 +192,8 @@ def main():
                         help='Do not load or save plan cache')
     parser.add_argument('--keys-per-hack', dest='keysperhack', type=float, default=1.5,
                         help='How many keys per hack action')
+    parser.add_argument('--cool-if-longer-than', dest='coolthreshold', type=int, default=5,
+                        help='Apply cooling if getting keys would take longer than this many minutes')
     parser.add_argument('-j', '--jsonmap', default=None,
                         help='Save the resulting map as IITC DrawTools json')
     # Obsolete options
@@ -254,6 +256,7 @@ def main():
     maxfield.maxmu = args.maxmu
     maxfield.minap = args.minap
     maxfield.keysperhack = args.keysperhack
+    maxfield.coolthreshold = args.coolthreshold
     maxfield.travelmode = args.travelmode
     maxfield.maxtime = args.maxtime
 

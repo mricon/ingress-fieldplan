@@ -48,6 +48,7 @@ active_graph = None
 cooling = 'rhs'
 minap = np.inf
 keysperhack = 1.5
+coolthreshold = 5
 maxmu = False
 travelmode = 'walking'
 maxtime = None
@@ -392,6 +393,9 @@ def get_workplan_stats(workplan):
     traveltime = 0
     links = 0
     fields = 0
+    hscount = 0
+    hs_at = list()
+    portal_times = [0] * active_graph.order()
 
     try:
         totalarea = active_graph.totalarea
@@ -402,21 +406,27 @@ def get_workplan_stats(workplan):
     prev_p = None
     plan_at = 0
     seen_p = list()
+    time_at_portal = 0
     for p, q, f in workplan:
         mp = combined_graph.node[p]['pos']
         plan_at += 1
 
         # Are we at a different location than the previous portal?
         if p != prev_p:
+            # Append previous portal's time_at_portal to total time
+            totaltime += time_at_portal
+            if prev_p is not None:
+                portal_times[prev_p] += time_at_portal
+
             # We are at a new portal, so add half a minute just because
             # it takes time to get positioned and get to the right
             # screen in the UI
-            totaltime += 0.5
+            time_at_portal = 0.5
             # Are we capturing?
             if p not in seen_p:
                 # Add half a minute for capturing, unless idkfa
                 if cooling != 'idkfa':
-                    totaltime += 0.5
+                    time_at_portal += 0.5
                 seen_p.append(p)
 
             # How many keys do we need if/until we come back?
@@ -451,7 +461,7 @@ def get_workplan_stats(workplan):
             # Are we at a blocker?
             if 'special' in combined_graph.node[mp] and combined_graph.node[mp]['special'] == '_w_blocker':
                 # assume it takes 3 minutes to destroy a blocker
-                totaltime += 3
+                time_at_portal += 3
                 prev_p = p
                 continue
 
@@ -466,23 +476,28 @@ def get_workplan_stats(workplan):
             if needkeys and cooling != 'idkfa':
                 # We assume:
                 # - we get roughly 1.5 keys per each hack (override with --keys-per-hack)
-                # - we glyph-hack, meaning it takes about a minute per actual hack action
+                # - we glyph-hack, meaning it takes about 30 seconds per actual hack action
+                # - we'll use a Heat Sink only if we'd spend more than 10 min at a portal
+                #   (override with --cool-if-longer-than)
+                use_cooling = False
                 if keysperhack != 1:
                     needed_hacks = int((needkeys/keysperhack) + (needkeys % keysperhack))
                 else:
                     needed_hacks = needkeys
-                # Hacking time
-                totaltime += needed_hacks
-                if cooling == 'none':
-                    # uh-oh, no cooling?
-                    totaltime += cooltime['none']*(needed_hacks-1)
-                elif needed_hacks > 2:
+                time_at_portal += needed_hacks/2
+                wait_time = cooltime['none']*(needed_hacks-1)
+                if cooling != 'none' and wait_time >= coolthreshold:
+                    # Apply a heat sink and try again
+                    hscount += 1
+                    hs_at.append(p)
                     # second hack is free regardless of the type of HS
-                    totaltime += cooltime[cooling]*(needed_hacks-2)
+                    wait_time = cooltime[cooling]*(needed_hacks-2)
+
+                time_at_portal += wait_time
 
             if lastvisit:
                 # Add half a minute for putting on shields
-                totaltime += 0.5
+                time_at_portal += 0.5
 
             prev_p = p
 
@@ -490,7 +505,7 @@ def get_workplan_stats(workplan):
             continue
 
         # Add 15 seconds per link
-        totaltime += 0.25
+        time_at_portal += 0.25
         totalap += LINKAP
         links += 1
 
@@ -510,11 +525,18 @@ def get_workplan_stats(workplan):
     if need_area:
         active_graph.totalarea = totalarea
 
+    # Add time at the last portal
+    totaltime += time_at_portal
+    portal_times[p] = time_at_portal
+
     stats = {
         'time': totaltime,
         'nicetime': str(timedelta(minutes=totaltime)),
         'traveltime': traveltime,
         'nicetraveltime': str(timedelta(minutes=traveltime)),
+        'portaltimes': portal_times,
+        'hs': hscount,
+        'hs_at': hs_at,
         'ap': totalap,
         'dist': totaldist,
         'area': totalarea,
