@@ -202,7 +202,7 @@ def extend_graph_with_waypoints(a):
     num = a.order()
     for i in range(waypoint_graph.order()):
         attrs = waypoint_graph.nodes[i]
-        a.add_nodes(num, **attrs)
+        a.add_node(num, **attrs)
         a.nodes[num]['pos'] = master_num
         num += 1
         master_num += 1
@@ -878,7 +878,7 @@ def make_subset_graph(subset):
     ct = 0
     for num in subset:
         attrs = portal_graph.nodes[num]
-        b.add_nodes(ct, **attrs)
+        b.add_node(ct, **attrs)
         ct += 1
     return b
 
