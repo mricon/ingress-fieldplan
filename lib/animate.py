@@ -19,7 +19,7 @@ def shrink(a):
 
 def draw_edge(a, s, t, fig, marker, directional=False):
     eart = list()
-    edge = np.array([a.node[s]['xy'], a.node[t]['xy']]).T
+    edge = np.array([a.nodes[s]['xy'], a.nodes[t]['xy']]).T
     eart += fig.plot(edge[0], edge[1], marker, lw=2)
 
     if directional:
@@ -47,7 +47,7 @@ def make_json(outfile, faction):
         for tri in a.edges[p, q]['fields']:
             latlng = list()
             for v in tri:
-                coords = a.node[v]['pll'].split(',')
+                coords = a.nodes[v]['pll'].split(',')
                 latlng.append(
                     {
                         'lat': float(coords[0]),
@@ -80,7 +80,7 @@ def make_png_steps(workplan, outdir, faction, plotdpi=96):
     c_red = (1.0, 0.0, 0.0, 0.5)
     c_inv = (0.0, 0.0, 0.0, 0.0)
 
-    portals = np.array([ap.node[i]['xy'] for i in ap.nodes()]).T
+    portals = np.array([ap.nodes[i]['xy'] for i in ap.nodes()]).T
 
     fig = plt.figure(figsize=(11, 8), dpi=plotdpi)
     frames = list()
@@ -99,10 +99,10 @@ def make_png_steps(workplan, outdir, faction, plotdpi=96):
     for p, q, f in workplan:
         if p != prev_p:
             torm = list()
-            special = a.node[p]['special']
+            special = a.nodes[p]['special']
             if special is None:
-                # Colour this node captured
-                p_coords = np.array(a.node[p]['xy']).T
+                # Colour this nodes captured
+                p_coords = np.array(a.nodes[p]['xy']).T
                 if faction == 'res':
                     ax.plot(p_coords[0], p_coords[1], 'bo')
                 else:
@@ -122,16 +122,16 @@ def make_png_steps(workplan, outdir, faction, plotdpi=96):
                 dist = maxfield.get_portal_distance(prev_p, p)
                 if p not in seen_p:
                     if dist > 40:
-                        ax.set_title('%s %s (%s m)' % (action, a.node[p]['name'], dist), ha='center')
+                        ax.set_title('%s %s (%s m)' % (action, a.nodes[p]['name'], dist), ha='center')
                     else:
-                        ax.set_title('%s %s' % (action, a.node[p]['name']), ha='center')
+                        ax.set_title('%s %s' % (action, a.nodes[p]['name']), ha='center')
                 else:
                     if dist > 40:
-                        ax.set_title('Travel to %s (%s m)' % (a.node[p]['name'], dist), ha='center')
+                        ax.set_title('Travel to %s (%s m)' % (a.nodes[p]['name'], dist), ha='center')
                     else:
-                        ax.set_title('Move to %s' % a.node[p]['name'], ha='center')
+                        ax.set_title('Move to %s' % a.nodes[p]['name'], ha='center')
             else:
-                ax.set_title('Start at %s' % a.node[p]['name'], ha='center')
+                ax.set_title('Start at %s' % a.nodes[p]['name'], ha='center')
 
             filen = os.path.join(outdir, 'step_{0:03d}.png'.format(len(frames)))
             fig.savefig(filen)
@@ -147,7 +147,7 @@ def make_png_steps(workplan, outdir, faction, plotdpi=96):
         if q is None:
             continue
 
-        ax.set_title('Link to %s' % a.node[q]['name'], ha='center')
+        ax.set_title('Link to %s' % a.nodes[q]['name'], ha='center')
 
         # Draw the link edge
         torm = draw_edge(a, p, q, ax, 'k-', directional=True)
@@ -156,7 +156,7 @@ def make_png_steps(workplan, outdir, faction, plotdpi=96):
         if f:
             # We'll display the new fields in red
             for tri in a.edges[p, q]['fields']:
-                coords = np.array([a.node[v]['xy'] for v in tri])
+                coords = np.array([a.nodes[v]['xy'] for v in tri])
                 fields.append(Polygon(shrink(coords.T).T, facecolor=c_red,
                                       edgecolor=c_inv))
 
@@ -186,7 +186,7 @@ def make_png_steps(workplan, outdir, faction, plotdpi=96):
                 ax.add_patch(field)
 
     # Save final frame with all completed fields
-    ax.set_title('Finish at %s' % a.node[p]['name'], ha='center')
+    ax.set_title('Finish at %s' % a.nodes[p]['name'], ha='center')
     filen = os.path.join(outdir, 'step_{0:03d}.png'.format(len(frames)))
     fig.savefig(filen)
     frames.append(filen)

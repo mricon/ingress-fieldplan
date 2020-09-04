@@ -138,7 +138,7 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     n = a.order()
     logger.info('portals:')
     for p in range(n):
-        logger.info('    %d: %s', p, a.node[p]['name'])
+        logger.info('    %d: %s', p, a.nodes[p]['name'])
     logger.info('orig_workplan:\n%s', pformat(a.orig_workplan))
     logger.info('fixes:\n%s', pformat(a.fixes))
     logger.info('workplan:\n%s', pformat(workplan))
@@ -177,10 +177,10 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
                     totalkeys += 1
 
             mapurl = 'https://www.google.com/maps/dir/?api=1&destination=%s&travelmode=%s' % (
-                a.node[p]['pll'], travelmode
+                a.nodes[p]['pll'], travelmode
             )
-            if 'special' in a.node[p]:
-                special = a.node[p]['special']
+            if 'special' in a.nodes[p]:
+                special = a.nodes[p]['special']
             else:
                 special = None
 
@@ -196,24 +196,24 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
                     hyperlink = '=HYPERLINK("%s"; "%s")' % (mapurl, nicedist)
                     planrows.append((u'▼',))
                     planrows.append((travelmoji[travelmode], hyperlink))
-                    logger.info('-->Move to %s [%s]', a.node[p]['name'], nicedist)
+                    logger.info('-->Move to %s [%s]', a.nodes[p]['name'], nicedist)
                 else:
                     planrows.append((u'▼',))
             else:
                 hyperlink = '=HYPERLINK("%s"; "map")' % mapurl
                 planrows.append((travelmoji[travelmode], hyperlink))
-                logger.info('-->Start at %s', a.node[p]['name'])
+                logger.info('-->Start at %s', a.nodes[p]['name'])
 
-            logger.info('--|At %s', a.node[p]['name'])
+            logger.info('--|At %s', a.nodes[p]['name'])
             # Are we at a waypoint?
             if special in ('_w_start', '_w_end'):
-                planrows.append(('W', a.node[p]['name']))
+                planrows.append(('W', a.nodes[p]['name']))
                 # Nothing else here
                 prev_p = p
                 n_waypoints += 1
                 continue
 
-            planrows.append(('P', a.node[p]['name']))
+            planrows.append(('P', a.nodes[p]['name']))
 
             # Are we at a blocker?
             if special == '_w_blocker':
@@ -251,8 +251,8 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
             else:
                 action = 'L'
 
-            planrows.append((action, u'▶%s' % a.node[q]['name']))
-            logger.info('  \\%s--> %s', action, a.node[q]['name'])
+            planrows.append((action, u'▶%s' % a.nodes[q]['name']))
+            logger.info('  \\%s--> %s', action, a.nodes[q]['name'])
 
     totalkm = stats['dist']/float(1000)
     logger.info('Total workplan distance: %0.2f km', totalkm)

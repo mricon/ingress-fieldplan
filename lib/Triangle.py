@@ -58,7 +58,7 @@ class Triangle:
             self.verts[final] = self.verts[0]
             self.verts[0] = tmp
 
-        self.pts = np.array([a.node[p]['xyz'] for p in verts])
+        self.pts = np.array([a.nodes[p]['xyz'] for p in verts])
         self.children = []
         self.contents = []
         self.center = None
@@ -71,7 +71,7 @@ class Triangle:
         for p in candidates:
             if p in self.verts:
                 continue
-            if geometry.sphereTriContains(self.pts, self.a.node[p]['xyz']):
+            if geometry.sphereTriContains(self.pts, self.a.nodes[p]['xyz']):
                 self.contents.append(p)
 
 
@@ -92,8 +92,8 @@ class Triangle:
         if len(self.contents) == 0:
             return
 
-        contentPts = np.array([self.a.node[p]['pos'] for p in self.contents])
-        displaces = contentPts - self.a.node[self.verts[0]]['pos']
+        contentPts = np.array([self.a.nodes[p]['pos'] for p in self.contents])
+        displaces = contentPts - self.a.nodes[self.verts[0]]['pos']
         dists = np.sum(displaces**2,1)
         closest = np.argmin(dists)
 
@@ -125,7 +125,7 @@ class Triangle:
 
     def tostr(self):
         # Just a string representation of the triangle
-        return str([self.a.node[self.verts[i]]['name'] for i in range(3)])
+        return str([self.a.nodes[self.verts[i]]['name'] for i in range(3)])
 
 
     def buildFinal(self):

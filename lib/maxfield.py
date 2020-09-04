@@ -118,18 +118,18 @@ def gen_distance_matrix(gmapskey=None):
         direct_matrow = list()
         for p2 in range(n):
             # Do direct distance first
-            p1pos = a.node[p1]['geo']
-            p2pos = a.node[p2]['geo']
+            p1pos = a.nodes[p1]['geo']
+            p2pos = a.nodes[p2]['geo']
             dist = int(geometry.sphereDist(p1pos, p2pos)[0])
             duration = int(dist/travel_speed[travelmode])
             direct_matrow.append(dist)
-            logger.debug('%s -( %d )-> %s (Direct)', a.node[p1]['name'], dist, a.node[p2]['name'])
+            logger.debug('%s -( %d )-> %s (Direct)', a.nodes[p1]['name'], dist, a.nodes[p2]['name'])
 
             # If it's over 40 meters and we have a gmaps client key,
             # look up the actual distance using google maps API
             if dist > 40 and gmaps is not None:
-                p1pos = a.node[p1]['pll']
-                p2pos = a.node[p2]['pll']
+                p1pos = a.nodes[p1]['pll']
+                p2pos = a.nodes[p2]['pll']
                 dkey = '%s,%s,%s' % (p1pos, p2pos, travelmode)
                 rkey = '%s,%s,%s' % (p2pos, p1pos, travelmode)
                 dkey_dur = '%s_dur' % dkey
@@ -138,13 +138,13 @@ def gen_distance_matrix(gmapskey=None):
                 if dkey in _gmap_cache_db and dkey_dur in _gmap_cache_db:
                     dist = _gmap_cache_db[dkey]
                     duration = _gmap_cache_db[dkey_dur]
-                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'],
-                                 dist, a.node[p2]['name'], travelmode)
+                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.nodes[p1]['name'],
+                                 dist, a.nodes[p2]['name'], travelmode)
                 elif rkey in _gmap_cache_db and rkey_dur in _gmap_cache_db:
                     dist = _gmap_cache_db[rkey]
                     duration = _gmap_cache_db[rkey_dur]
-                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.node[p1]['name'],
-                                 dist, a.node[p2]['name'], travelmode)
+                    logger.debug('%s -( %d )-> %s (Google/%s/cached)', a.nodes[p1]['name'],
+                                 dist, a.nodes[p2]['name'], travelmode)
                 else:
                     # Perform the lookup
                     now = datetime.now()
@@ -153,8 +153,8 @@ def gen_distance_matrix(gmapskey=None):
                     duration = int(gdir[0]['legs'][0]['duration']['value']/60)
                     _gmap_cache_db[dkey] = dist
                     _gmap_cache_db[dkey_dur] = duration
-                    logger.debug('%s -( %d )-> %s (Google/%s/lookup)', a.node[p1]['name'],
-                                 dist, a.node[p2]['name'], travelmode)
+                    logger.debug('%s -( %d )-> %s (Google/%s/lookup)', a.nodes[p1]['name'],
+                                 dist, a.nodes[p2]['name'], travelmode)
 
             matrow.append(dist)
             matrow_dur.append(duration)
@@ -166,8 +166,8 @@ def gen_distance_matrix(gmapskey=None):
 
 def get_portal_distance(p1, p2, direct=False):
     if active_graph is not None:
-        p1 = active_graph.node[p1]['pos']
-        p2 = active_graph.node[p2]['pos']
+        p1 = active_graph.nodes[p1]['pos']
+        p2 = active_graph.nodes[p2]['pos']
     if direct:
         return direct_dist_matrix[p1][p2]
     return dist_matrix[p1][p2]
@@ -175,8 +175,8 @@ def get_portal_distance(p1, p2, direct=False):
 
 def get_portal_time(p1, p2):
     if active_graph is not None:
-        p1 = active_graph.node[p1]['pos']
-        p2 = active_graph.node[p2]['pos']
+        p1 = active_graph.nodes[p1]['pos']
+        p2 = active_graph.nodes[p2]['pos']
     return int(time_matrix[p1][p2])
 
 
@@ -201,9 +201,9 @@ def extend_graph_with_waypoints(a):
     master_num = portal_graph.order()
     num = a.order()
     for i in range(waypoint_graph.order()):
-        attrs = waypoint_graph.node[i]
-        a.add_node(num, **attrs)
-        a.node[num]['pos'] = master_num
+        attrs = waypoint_graph.nodes[i]
+        a.add_nodes(num, **attrs)
+        a.nodes[num]['pos'] = master_num
         num += 1
         master_num += 1
 
@@ -214,13 +214,13 @@ def populate_graph(portals):
 
     for num, row in enumerate(portals):
         a.add_node(num)
-        a.node[num]['name'] = row[0]
+        a.nodes[num]['name'] = row[0]
         coord_parts = row[1].split(',')
-        a.node[num]['pll'] = row[1]
+        a.nodes[num]['pll'] = row[1]
         if len(row) > 2:
-            a.node[num]['special'] = row[2]
+            a.nodes[num]['special'] = row[2]
         else:
-            a.node[num]['special'] = None
+            a.nodes[num]['special'] = None
         lat = int(float(coord_parts[0]) * 1.e6)
         lon = int(float(coord_parts[1]) * 1.e6)
         locs.append(np.array([lat, lon], dtype=float))
@@ -235,10 +235,10 @@ def populate_graph(portals):
     xy = geometry.gnomonicProj(locs, xyz)
 
     for i in range(n):
-        a.node[i]['pos'] = i
-        a.node[i]['geo'] = locs[i]
-        a.node[i]['xyz'] = xyz[i]
-        a.node[i]['xy'] = xy[i]
+        a.nodes[i]['pos'] = i
+        a.nodes[i]['geo'] = locs[i]
+        a.nodes[i]['xyz'] = xyz[i]
+        a.nodes[i]['xy'] = xy[i]
 
     return a
 
@@ -266,12 +266,12 @@ def make_workplan(a, is_subset=False):
 
     for i in range(a.order()):
         # skip non-special nodes
-        if 'special' not in a.node[i]:
+        if 'special' not in a.nodes[i]:
             continue
         # Is it a start enpoint?
-        if a.node[i]['special'] == '_w_start':
+        if a.nodes[i]['special'] == '_w_start':
             w_start = i
-        elif a.node[i]['special'] == '_w_end':
+        elif a.nodes[i]['special'] == '_w_end':
             w_end = i
 
     if w_start is None:
@@ -283,13 +283,13 @@ def make_workplan(a, is_subset=False):
                 w_start = p
                 maxdist = dist
 
-        logger.debug('Furthest from %s is %s', a.node[linkplan[0][0]]['name'], a.node[w_start]['name'])
+        logger.debug('Furthest from %s is %s', a.nodes[linkplan[0][0]]['name'], a.nodes[w_start]['name'])
 
     cachekey = [w_start, linkplan[0][0]]
     if is_subset:
         subset_key = list()
         for n in range(a.order()):
-            subset_key.append(a.node[n]['pos'])
+            subset_key.append(a.nodes[n]['pos'])
         subset_key.sort()
         cachekey = cachekey + subset_key
     cachekey = tuple(cachekey)
@@ -408,7 +408,7 @@ def get_workplan_stats(workplan):
     seen_p = list()
     time_at_portal = 0
     for p, q, f in workplan:
-        mp = combined_graph.node[p]['pos']
+        mp = combined_graph.nodes[p]['pos']
         plan_at += 1
 
         # Are we at a different location than the previous portal?
@@ -459,7 +459,7 @@ def get_workplan_stats(workplan):
                     totaldist += dist
 
             # Are we at a blocker?
-            if 'special' in combined_graph.node[mp] and combined_graph.node[mp]['special'] == '_w_blocker':
+            if 'special' in combined_graph.nodes[mp] and combined_graph.nodes[mp]['special'] == '_w_blocker':
                 # assume it takes 3 minutes to destroy a blocker
                 time_at_portal += 3
                 prev_p = p
@@ -877,8 +877,8 @@ def make_subset_graph(subset):
     b = nx.DiGraph()
     ct = 0
     for num in subset:
-        attrs = portal_graph.node[num]
-        b.add_node(ct, **attrs)
+        attrs = portal_graph.nodes[num]
+        b.add_nodes(ct, **attrs)
         ct += 1
     return b
 
@@ -886,7 +886,7 @@ def make_subset_graph(subset):
 def max_fields(a):
     n = a.order()
     # Generate a distance matrix for all portals
-    pts = np.array([a.node[i]['xy'] for i in range(n)])
+    pts = np.array([a.nodes[i]['xy'] for i in range(n)])
     perim = np.array(geometry.getPerim(pts))
 
     if not triangulate(a, perim):
@@ -900,7 +900,7 @@ def gen_cache_key():
     plls = list()
     a = combined_graph
     for m in range(a.order()):
-        plls.append(a.node[m]['pll'])
+        plls.append(a.nodes[m]['pll'])
     h = hashlib.sha1()
     for pll in plls:
         h.update(pll.encode('utf-8'))
