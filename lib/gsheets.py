@@ -2,6 +2,7 @@
 
 import sys
 import os
+import datetime
 
 from googleapiclient.discovery import build
 from httplib2 import Http
@@ -282,6 +283,22 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     dtitle = '%s %s (%0.2fkm/%dP/%sAP)' % (travelmoji[travelmode], stats['nicetime'], totalkm,
                                            a.order()-n_waypoints, '{:,}'.format(stats['ap']))
     logger.info('Adding "%s" sheet with %d actions', dtitle, len(workplan))
+    
+     # Check if a sheet with the same name already exists
+    sheet_exists = False
+    sheets = service.spreadsheets().get(spreadsheetId=spid, fields='sheets(properties(title))').execute().get('sheets', [])
+    for sheet in sheets:
+        if sheet['properties']['title'] == dtitle:
+            sheet_exists = True
+            break
+
+    # Append a timestamp to the sheet name if it already exists
+    if sheet_exists:
+        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        dtitle += ' ' + timestamp
+        logger.info('Sheet "%s" already exists, using "%s" instead', dtitle, dtitle)
+        
+        
     requests.append({
         'addSheet': {
             'properties': {
