@@ -918,8 +918,10 @@ def make_subset(minportals, random_start=False):
                     area = get_portals_area(p1, p2, p3)
                     perim = get_portals_perimeter(p1, p2, p3)
                     if area > larea:
+                        larea = area
                         largest_triangle = (p1, p2, p3)
                     if perim < sperim:
+                        sperim = perim
                         smallest_triangle = (p1, p2, p3)
 
     if random_start:
