@@ -159,7 +159,7 @@ def main():
                    'portals in the game Ingress and create a convenient plan '
                    'in Google Spreadsheets. Spin-off from Maxfield.')
 
-    parser = argparse.ArgumentParser(description=description, prog='makePlan.py',
+    parser = argparse.ArgumentParser(description=description, prog='fieldplan.py',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-i', '--iterations', type=int, default=5000,
                         help='Number of iterations to perform. More iterations may improve '

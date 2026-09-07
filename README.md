@@ -3,18 +3,24 @@
 This is for Ingress. If you don't know what that is, you're lost.
 
 This is a heavily modified original [maxfield](https://github.com/tvwenger/maxfield)
-software that will generate an easy-to-follow fielding plan using Google Spreadsheets.
-The benefits over the original maxfield program are:
+software that will generate an easy-to-follow fielding plan. The benefits over
+the original maxfield program are:
 
 1. Works on Python 3
 2. Generates more efficient solutions requiring fewer iterations
 3. Generates an efficient capture plan in addition to the fielding plan
-4. Uses Google Directions API for precise distances (recommended, requires an API key)
-5. Supports walking, biking, and driving plans (mostly relevant with Google Directions)
+4. Estimates how long the plan will actually take to play, including hacking
+   and portal cooldown, and optimizes for AP per minute rather than raw AP
+5. Uses Google Directions API for precise distances (optional, requires an API key)
+6. Supports walking, biking, and driving plans (mostly relevant with Google Directions)
 
-The main perk of this implementation is the Google Spreadsheet fielding plan,
-which provides easy-to-follow step-by-step instructions for the agent. This is
-how it looks on a mobile phone:
+There are two ways to get your plan out of it:
+
+- **a plain text file** -- no accounts, no API keys, nothing to set up
+- **a Google Spreadsheet** -- more work to set up, but the result is a
+  genuinely nice step-by-step checklist on your phone
+
+This is how the spreadsheet version looks on a mobile phone:
 
 <img src="https://raw.githubusercontent.com/mricon/ingress-fieldplan/master/screenshots/spreadsheet-view.jpg" width="250">
 
@@ -28,12 +34,77 @@ plan tab and zoom in for best readability.
 
 ### Will this get me banned?
 
-Fieldplan does not touch any of the Niantic's servers, so it is perfectly
-within the Terms of Service. All of the data comes from the spreadsheet and
-from the Google Directions API.
+Fieldplan does not touch any of the game servers, so it is perfectly within the
+Terms of Service. All of the data comes from the portal list you give it, and
+from the Google Directions API if you choose to use one.
 
+# Installing
 
-# Why use spreadsheets
+This is a console python application requiring **Python 3.12 or newer**. It
+expects a POSIX-compatible system (Linux, OS X).
+
+The easy way, using [uv](https://docs.astral.sh/uv/):
+
+    uv sync
+
+That's it -- uv reads `pyproject.toml`, fetches the right Python, and creates
+the virtualenv for you. Prefix commands with `uv run` and you're done.
+
+If you'd rather do it by hand:
+
+    python3 -m venv venv
+    ./venv/bin/pip install -r requirements.txt
+
+If you've never used a console, python and pip before, then you'll have a bit
+of a hard time at first, but it's not that hard to learn.
+
+# Quick start
+
+Put your portals in a text file, one per line, `Name; portal link`:
+
+    Mount Royal Cross; https://intel.ingress.com/intel?pll=45.5088,-73.5878
+    Chalet du Mont-Royal; https://intel.ingress.com/intel?pll=45.5041,-73.5872
+    Beaver Lake Pavilion; https://intel.ingress.com/intel?pll=45.4996,-73.5951
+
+To get a portal link, find the portal on the [Intel Map](https://intel.ingress.com/intel),
+click on it, then click the "Link" button at the top right. Only the `pll=x,y`
+part matters, but pasting the whole URL is easiest.
+
+Then run:
+
+    uv run python fieldplan.py --textfile portals.txt
+
+Depending on how many portals you have, this will take anywhere from a few
+seconds to 10-15 minutes with the default number of iterations. The plan is
+written to `portals_plan.txt` next to your input file, and it looks like this:
+
+    Start at Home Base
+    [W] Waypoint: Home Base
+    🚶 Move to Saint Joseph Oratory (3.0 km, 37 min)
+    [P] At Saint Joseph Oratory
+      [H] Ensure 5 keys here
+      [S] Shields ON (6 links)
+      [L] Link to Mount Royal Cross
+
+A good number of portals is around 15, which is good for about an hour of
+gameplay plus getting around.
+
+## The text file format
+
+- One portal per line: `Name; link`
+- The link can be a full Intel URL, a bare `pll=45.5,-73.5` fragment, or just
+  `45.5,-73.5` coordinates
+- Anything after a second `;` is ignored, so the maxfield `Name;URL;keys`
+  format works as-is
+- Lines starting with `#` are comments, blank lines are ignored
+- Lines starting with `#!s`, `#!e` or `#!b` are waypoints (see below)
+
+*Note:* `-n`/`--nosave` has no effect in text file mode -- the plan file is
+always written.
+
+# Using Google Spreadsheets instead
+
+Spreadsheets are more setup, but worth it:
 
 1. they are easy to edit to input portals
 2. they come preinstalled on all android phones
@@ -44,38 +115,47 @@ The main reason why I hacked on maxfield is to make it more convenient for
 biking, as having a simple plan to follow allows me to concentrate more on
 biking and less on figuring out what to do next.
 
-# Prerequisites
+Set up a sheet with portal names in column `A` and Intel Map portal links in
+column `B`. Blank rows are ignored. Then pass the spreadsheet URL:
 
-This is a console python application. It expects a POSIX-compatible system
-(Linux, OS X) and a virtualenv-3 setup. After initializing the environment,
-you can install the required libraries using:
+    uv run python fieldplan.py -s https://docs.google.com/spreadsheets/d/xxx/edit#gid=0
 
-    pip install -r requirements.txt
+The results are saved as a new sheet in that same spreadsheet, and cached on
+your computer, so if you run the same spreadsheet again it will continue from
+the previous best plan.
 
-If you've never used a console, python and pip before, then you'll have a bit
-of a hard time at first, but it's not that hard to learn.
+Use `-n` to calculate a plan without writing anything back to the sheet.
 
-# Obtaining Google Spreadsheets credentials
+## Obtaining Google Spreadsheets credentials
 
-To start generating fieldplans, you will need to first get a credentials.json
-file and then generate a token. It's a bit annoying and complicated, but you
-only have to do this once.
+To use spreadsheet mode you need a credentials.json file and a token. It's a
+bit annoying and complicated, but you only have to do this once.
 
-1. follow instructions on the [Python Quickstart page](https://developers.google.com/sheets/api/quickstart/python')
-2. once you have credentials.json, save that file in the same directory as fieldplan
-3. run ./obtainGSToken.py
-4. copy the authorization link and open in your browser
-5. allow access
-6. copy the long string and paste it into the terminal where the script tells you
-7. the access token will be saved in the ingress-fieldplan cache folder
+1. follow instructions on the [Python Quickstart page](https://developers.google.com/sheets/api/quickstart/python)
+2. create the OAuth client as an application type of **Desktop app**
+3. once you have credentials.json, save that file in the same directory as fieldplan
+4. run `uv run python obtainGSToken.py`
+5. a browser window will open -- allow access
+6. the access token will be saved in the cache folder
+
+*CAUTION:* this uses the long-deprecated `oauth2client` library. The
+`--noauth_local_webserver` option, where you copy a link and paste a code back
+into the terminal, relied on Google's "out-of-band" OAuth flow, which Google
+switched off in October 2022 and which will no longer work. You need the
+default flow, which spins up a local web server on `localhost:8080` and
+requires a browser on the same machine.
+
+If spreadsheet auth gives you grief, just use `--textfile` -- it needs none of
+this.
 
 # Obtaining Google Directions API key
 
-This is also annoying and complicated, and you also have to only do this once.
+This is optional, and also annoying and complicated, and you also have to only
+do this once.
 
 CAUTION: Google will require you to set up billing for your project, so if
 you're not in a position to put in a credit card, then you shouldn't bother
-with this.  You should not get charged unless you're making many thousands of
+with this. You should not get charged unless you're making many thousands of
 API calls daily. Using your Directions API key with ingress-fieldplan should
 be effectively free for you if you're not calculating hundreds of plans every
 hour. Fieldplan also relies heavily on caching, so if we've looked up the
@@ -84,48 +164,19 @@ local cache for all future lookups.
 
 If you do set up your Google Directions API key, then you will greatly benefit
 from much more accurate distances, especially for portals that are in close
-proximity but require long detours.
+proximity but require long detours. Without it, fieldplan falls back to
+straight-line distances and a fixed speed per travel mode.
 
 1. go to the [Instructions page](https://developers.google.com/maps/documentation/directions/get-api-key)
 2. click "Get Started" and go through the process
 3. run the fieldplan command with the `-g {yourkey}` switch once
 4. fieldplan will cache the key and use it automatically next time
 
-# Testing it out
-
-Once you have your credentials.json (and your Directions API key, if you
-choose), you can run the following command to test out if it's working:
-
-    ./fieldplan -n -s https://docs.google.com/spreadsheets/d/1TbwOCNpsvA7CjOTPv_98Iirjt_siOoAgoTKa0PTglgU/edit
-
-If it didn't crash horribly, then you're in business!
-
-# Creating your own plans
-
-1. Go to the Intel Map and find the portals you want to field
-2. A good number is around 15 portals, good for about 1 hour of gameplay plus getting around
-3. Start a new Google Spreadsheet
-4. Column A is portal names
-5. Column B is for Intel Map portal links
-6. To get a portal link, click on the portal, then click on the "Link" button at the top-right
-7. We only need pll=x,y bits, but easiest is to copy-paste the whole URL
-8. Blank rows will be ignored
-
-Once you have all the portals entered, copy the spreadsheet URL and run the command:
-
-    ./fieldplan -s https://docs.google.com/spreadsheets/d/xxx/edit#gid=0
-
-Depending on how many portals you have in the spreadsheet, it will take
-anywhere from a few seconds to 10-15 minutes to run with the default set of
-iterations. The results will be saved as a new sheet and cached on your
-computer, so if you run the same spreadsheet again, it will continue from the
-previous best plan.
-
 # Other commandline switches
 
 Look at the output of
 
-    ./fieldplan --help
+    uv run python fieldplan.py --help
 
 to find all the knobs and levers you can tweak. Here are a few pointers:
 
@@ -148,6 +199,8 @@ Generally:
 Since iterations are largely random, it's entirely possible to find the best
 possible plan on your first run, and to only find terrible plans even after
 10,000 iterations. YMMV.
+
+You can hit Ctrl-C at any point to stop early and use the best plan found so far.
 
 ## Getting lots of keys from portals
 
@@ -202,12 +255,15 @@ Other options are:
 Running with `--cooling none` is recommended if you have lots of time, don't
 mind extra moving around, or don't want to spend your Heat Sink mods.
 
+You can also tune `--keys-per-hack` if 1.5 doesn't match your glyphing, and
+`--cool-if-longer-than` to change when a Heat Sink is considered worth using.
+
 ## Start and End waypoints
 
 You will probably be planning your field ops either from home, on the way
 from home to work/school, or from a parking/transit stop location. To generate
 plans that are more efficient with those locations, you should add
-them as waypoints to your spreadsheet.
+them as waypoints to your portal list.
 
 - First, find the waypoint location on the intel map and zoom in as far in
   as possible for the most accurate result.
@@ -218,21 +274,21 @@ them as waypoints to your spreadsheet.
   - `#!s Location Name` for your start waypoint
   - `#!e Location Name` for your end waypoint
 
-For example:
+In a text file:
 
-  - Column A1: `#!s My Home`
-  - Column B1: `https://intel.ingress.com/intel?ll=45.498803,-73.598872&z=21`
-  - Column A2: `#!e My School`
-  - Column B2: `https://intel.ingress.com/intel?ll=45.504427,-73.574309&z=21`
-  
+    #!s My Home; https://intel.ingress.com/intel?ll=45.498803,-73.598872&z=21
+    #!e My School; https://intel.ingress.com/intel?ll=45.504427,-73.574309&z=21
+
+In a spreadsheet, put the `#!s My Home` part in column `A` and the URL in
+column `B`.
+
 Waypoints can be either at the start or at the end of the portal list.
 
 ## Blocker waypoints
 
 You can also add portals you need to visit to destroy blockers by using the
 same logic as with start/end waypoints. Use the `#!b Portal Name` indicator
-in the left column to mark that a portal is a blocker and not part of the
-fielding plan.
+to mark that a portal is a blocker and not part of the fielding plan.
 
 *Note:* The software has no idea where the blocking links are, so you will
 need to review the plan to make sure that you are not throwing early links
@@ -250,13 +306,23 @@ so it will simply give higher priority to larger fields.
 
 ## Generating plots
 
-Passing the `-p` switch will generate a set of step-by-step PNG files that
-allows you to preview the plan in action. Here's what it is for the Biking
+Passing the `-p somedir` switch will generate a set of step-by-step PNG files
+that allow you to preview the plan in action, plus an animated
+`plan_movie.gif` in the same directory. Here's what it is for the Biking
 example above:
 
 ![Plot example](https://raw.githubusercontent.com/mricon/ingress-fieldplan/master/screenshots/plotting.gif "Plot example")
 
-You may need to install python-tkinter for it to work.
+You may need to install python-tkinter for it to work. GIF file size
+optimization additionally requires the `gifsicle` binary; without it you just
+get a warning and a slightly larger GIF.
+
+Use `--plotdpi 144` if you're on a high-dpi screen.
+
+## Exporting the plan to IITC
+
+Passing `-j plan.json` writes the resulting fields as IITC DrawTools JSON,
+which you can paste into the DrawTools plugin to see the plan on the map.
 
 ## I have an hour to play, find me a plan that works
 
@@ -273,7 +339,7 @@ satisfies the parameters.
 For example, there's a historical site with 25 portals, but fielding them all
 would take over 3 hours:
 
-- Create the spreadsheet with all 25 portals
+- Create the portal list with all 25 portals
 - Run fieldplan with `--maxtime 120`
 
 Fieldplan will try to find the most efficient plan that will take no more than
@@ -295,7 +361,7 @@ too few total AP points. For example, to get plans with at least 50,000 AP, run
 Manually inputting portals can be tedious, so there is a way to copy and paste
 the list from IITC. You will need:
 
-- [IITC](https://iitc.me/desktop/), obviously
+- [IITC](https://iitc.app/), obviously (IITC-CE is the maintained version these days)
 - [Multi-Export Plugin](https://github.com/modkin/Ingress-IITC-Multi-Export/raw/master/multi_export.user.js)
 
 Here's how to use it:
@@ -304,21 +370,36 @@ Here's how to use it:
 - Click on "Multi-Export"
 - Click on `XXX` in the "Polygon/TSV" column
 - Copy all entries in the text area
-- Start a new spreadsheet
-- Paste in the `A1` cell
 
-Fieldplan needs Portal names in the column `A` and Intel URLs in the column `B`,
-so you will need to either:
+For a text file, keep the portal name and the Intel URL and separate them with
+a `;` -- anything after that is ignored, so the maxfield export format works
+directly.
 
-- delete columns `D`, `C`, `A`, or
-- rearrange the columns to be in the expected order
-
+For a spreadsheet, paste in the `A1` cell. Fieldplan needs portal names in
+column `A` and Intel URLs in column `B`, so you will need to either delete
+columns `D`, `C`, `A`, or rearrange the columns to be in the expected order.
 Fieldplan will ignore anything not in columns `A` and `B`.
 
-*CAUTION: IITC is not an official resource provided by Niantic, and your use
-of it [may be against their Terms of Service](https://iitc.me/faq/#ban).*
+*CAUTION: IITC is not an official resource, and your use of it
+[may be against the Terms of Service](https://iitc.me/faq/#ban).*
 
-## If something is not working
+# Where things are cached
+
+Everything persistent lives in `~/.cache/ingress-fieldmap/`:
+
+- `token.json` -- your Google Spreadsheets auth token
+- `distcache` -- cached Google Directions results and your Maps API key
+- `plans/` -- the best plan found so far for a given set of portals, so
+  re-running the same list picks up where it left off
+
+Pass `--no-plan-cache` to ignore and not update the stored best plan.
+
+*Note:* these are `shelve` databases, and the on-disk format depends on which
+Python built them. If you switch interpreters (say between a system Python 3.14
+and uv's 3.12) you may get `dbm.error: db type could not be determined`. Delete
+the cache directory and carry on.
+
+# If something is not working
 
 You can open a GitHub issue if something is not working for you, but please
 keep in mind that this is entirely a hobby project and I may not have a chance
