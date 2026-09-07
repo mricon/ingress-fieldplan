@@ -178,8 +178,7 @@ def get_active_tables():
         pos = [a.nodes[i]['pos'] for i in range(n)]
         dist = [[dist_matrix[pos[i]][pos[j]] for j in range(n)] for i in range(n)]
         tim = [[int(time_matrix[pos[i]][pos[j]]) for j in range(n)] for i in range(n)]
-        blocker = [('special' in combined_graph.nodes[i]
-                    and combined_graph.nodes[i]['special'] == '_w_blocker') for i in range(n)]
+        blocker = [a.nodes[i].get('special') == '_w_blocker' for i in range(n)]
         _active_tables = (a, dist, tim, blocker)
     return _active_tables[1:]
 
