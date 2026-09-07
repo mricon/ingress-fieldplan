@@ -46,7 +46,10 @@ waypoint_graph = None
 active_graph = None
 
 cooling = 'rhs'
-minap = np.inf
+# None means no AP floor. Must not be a number: the guard in make_workplan()
+# only tests 'is not None', so any numeric default makes every plan look
+# under-AP and return the bare linkplan before capture routing ever runs.
+minap = None
 keysperhack = 1.5
 coolthreshold = 5
 maxmu = False

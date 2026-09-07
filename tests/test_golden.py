@@ -40,6 +40,10 @@ from lib import maxfield, text_interface  # noqa: E402
 
 logging.getLogger('fieldplan').addHandler(logging.NullHandler())
 
+# Read at import, before reset_state() overwrites them, so check_module_defaults()
+# can test what a library caller who sets nothing actually gets
+SHIPPED_DEFAULTS = {name: getattr(maxfield, name) for name in ('minap', 'maxmu', 'maxtime')}
+
 FIXTURES = {
     'waypoints': ('waypoints.txt', 60),
     'rand30': ('rand30.txt', 40),
@@ -192,6 +196,51 @@ def check_subset_invariants():
     return fails
 
 
+def check_module_defaults():
+    """A library caller who configures nothing must still get the whole algorithm.
+
+    Only the defaults that fail *silently* are worth checking here. A bad
+    'cooling' or 'travelmode' already dies with a KeyError in the fixtures
+    above; minap = np.inf did not, and quietly skipped capture routing for
+    years.
+    """
+    fails = []
+    reset_state()
+    portals, waypoints = text_interface.get_portals_from_file(os.path.join(HERE, 'fixtures', 'waypoints.txt'))
+    maxfield.populate_graphs(portals, waypoints)
+    maxfield.gen_distance_matrix(None)
+
+    plans = dict()
+    for label, minap in (('shipped default', SHIPPED_DEFAULTS['minap']), ('explicit None', None)):
+        maxfield.minap = minap
+        maxfield.capture_cache = dict()
+        maxfield.active_graph = None
+        np.random.seed(SEED)
+        b = maxfield.portal_graph.copy()
+        workplan, stats = solve_iteration(b, False)
+        if workplan is None:
+            fails.append('%s produced no workplan at all' % label)
+            return fails
+        plans[label] = (workplan, stats)
+        # A bare linkplan has a target on every step; a real workplan starts
+        # with the capture route, whose steps have q None
+        if not [w for w in workplan if w[1] is None]:
+            fails.append('%s (minap=%r) returned a linkplan with no capture steps -- '
+                         'make_workplan bailed at the minap guard' % (label, minap))
+        if not hasattr(b, 'captureplan'):
+            fails.append('%s (minap=%r) never ran the capture routing' % (label, minap))
+
+    if plans['shipped default'] != plans['explicit None']:
+        fails.append('the shipped minap default does not behave like None')
+
+    # maxmu and maxtime silently change what is being optimised for, rather
+    # than failing, so they have to default to off
+    for name in ('maxmu', 'maxtime'):
+        if SHIPPED_DEFAULTS[name] not in (None, False):
+            fails.append('default %s is %r, expected off' % (name, SHIPPED_DEFAULTS[name]))
+    return fails
+
+
 def main():
     record = '--record' in sys.argv
     failed = False
@@ -231,13 +280,15 @@ def main():
             print('ok   %s: %d/%d iterations identical' % (name, len(results), len(golden)))
 
     if not record:
-        fails = check_subset_invariants()
-        for msg in fails:
-            print('FAIL subset invariants: %s' % msg)
-        if fails:
-            failed = True
-        else:
-            print('ok   subset invariants')
+        for label, check in (('subset invariants', check_subset_invariants),
+                             ('module defaults', check_module_defaults)):
+            fails = check()
+            for msg in fails:
+                print('FAIL %s: %s' % (label, msg))
+            if fails:
+                failed = True
+            else:
+                print('ok   %s' % label)
     sys.exit(1 if failed else 0)
 
 
