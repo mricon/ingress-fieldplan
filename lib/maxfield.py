@@ -644,7 +644,7 @@ def get_workplan_stats(workplan):
 
             prev_p = p
 
-        if not q:
+        if q is None:
             continue
 
         # Add 15 seconds per link
@@ -827,7 +827,7 @@ def improve_workplan(workplan):
     logger.debug('Renumbering links')
     # Record the new order of edges
     fc = 0
-    for i in range(a.size()):
+    for i in range(len(workplan)):
         p, q, f = workplan[i]
         if q is None:
             continue

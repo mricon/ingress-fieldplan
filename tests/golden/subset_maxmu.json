@@ -1,24 +1,24 @@
 [
  {
   "stats": {
-   "ap": 13002,
-   "appmin": 127,
-   "area": 2665250,
+   "ap": 14878,
+   "appmin": 145,
+   "area": 5330435,
    "dist": 7564,
-   "fields": 3,
+   "fields": 4,
    "hs": 0,
    "hs_at": [],
-   "links": 4,
-   "nicetime": "1:42:00",
+   "links": 6,
+   "nicetime": "1:42:30",
    "nicetraveltime": "1:33:00",
    "portaltimes": [
     1.25,
-    2.0,
-    2.0,
+    2.25,
+    2.25,
     2.25
    ],
-   "sqmpmin": 26129,
-   "time": 102.0,
+   "sqmpmin": 52004,
+   "time": 102.5,
    "traveltime": 93
   },
   "subset": [
@@ -67,27 +67,27 @@
  },
  {
   "stats": {
-   "ap": 18441,
-   "appmin": 162,
+   "ap": 21567,
+   "appmin": 188,
    "area": 5964215,
    "dist": 8221,
-   "fields": 5,
+   "fields": 7,
    "hs": 1,
    "hs_at": [
     4
    ],
-   "links": 7,
-   "nicetime": "1:53:45",
+   "links": 9,
+   "nicetime": "1:54:15",
    "nicetraveltime": "1:40:00",
    "portaltimes": [
     2.25,
-    1.5,
+    1.75,
     2.75,
-    3.25,
+    3.5,
     2.5
    ],
-   "sqmpmin": 52432,
-   "time": 113.75,
+   "sqmpmin": 52203,
+   "time": 114.25,
    "traveltime": 100
   },
   "subset": [
@@ -162,28 +162,28 @@
  },
  {
   "stats": {
-   "ap": 23567,
-   "appmin": 129,
-   "area": 4457879,
+   "ap": 25443,
+   "appmin": 139,
+   "area": 7123064,
    "dist": 13434,
-   "fields": 7,
+   "fields": 8,
    "hs": 1,
    "hs_at": [
     4
    ],
-   "links": 9,
-   "nicetime": "3:02:15",
+   "links": 11,
+   "nicetime": "3:02:45",
    "nicetraveltime": "2:45:00",
    "portaltimes": [
-    3.0,
+    3.25,
     3.5,
-    2.25,
+    2.5,
     3.25,
     2.5,
     1.25
    ],
-   "sqmpmin": 24460,
-   "time": 182.25,
+   "sqmpmin": 38977,
+   "time": 182.75,
    "traveltime": 165
   },
   "subset": [
@@ -251,8 +251,8 @@
     2
    ],
    [
-    1,
     0,
+    1,
     1
    ],
    [
@@ -274,31 +274,31 @@
  },
  {
   "stats": {
-   "ap": 29943,
-   "appmin": 153,
+   "ap": 32132,
+   "appmin": 164,
    "area": 8273684,
    "dist": 14139,
-   "fields": 10,
+   "fields": 11,
    "hs": 3,
    "hs_at": [
     2,
     3,
     0
    ],
-   "links": 11,
-   "nicetime": "3:14:45",
+   "links": 14,
+   "nicetime": "3:15:30",
    "nicetraveltime": "2:52:00",
    "portaltimes": [
     2.5,
     3.0,
-    1.25,
+    1.5,
     2.75,
     3.0,
-    2.75,
-    2.5
+    3.0,
+    2.75
    ],
-   "sqmpmin": 42483,
-   "time": 194.75,
+   "sqmpmin": 42320,
+   "time": 195.5,
    "traveltime": 172
   },
   "subset": [
@@ -395,22 +395,22 @@
  },
  {
   "stats": {
-   "ap": 37258,
-   "appmin": 175,
-   "area": 7398491,
+   "ap": 38821,
+   "appmin": 182,
+   "area": 8611049,
    "dist": 15125,
-   "fields": 13,
+   "fields": 14,
    "hs": 3,
    "hs_at": [
     5,
     7,
     1
    ],
-   "links": 16,
-   "nicetime": "3:32:00",
+   "links": 17,
+   "nicetime": "3:32:15",
    "nicetraveltime": "3:04:00",
    "portaltimes": [
-    3.0,
+    2.75,
     2.75,
     4.25,
     3.0,
@@ -419,8 +419,8 @@
     1.25,
     5.5
    ],
-   "sqmpmin": 34898,
-   "time": 212.0,
+   "sqmpmin": 40570,
+   "time": 212.25,
    "traveltime": 184
   },
   "subset": [
@@ -530,8 +530,8 @@
     1
    ],
    [
-    6,
     0,
+    6,
     1
    ],
    [
@@ -543,32 +543,32 @@
  },
  {
   "stats": {
-   "ap": 42071,
-   "appmin": 172,
-   "area": 8853265,
+   "ap": 45510,
+   "appmin": 186,
+   "area": 11567811,
    "dist": 17777,
-   "fields": 15,
+   "fields": 17,
    "hs": 2,
    "hs_at": [
     6,
     4
    ],
-   "links": 17,
-   "nicetime": "4:03:15",
+   "links": 20,
+   "nicetime": "4:04:00",
    "nicetraveltime": "3:35:00",
    "portaltimes": [
     1.25,
-    3.5,
+    3.75,
     3.5,
     3.75,
     2.5,
     3.25,
     2.5,
-    2.5,
-    2.5
+    2.75,
+    2.75
    ],
-   "sqmpmin": 36395,
-   "time": 243.25,
+   "sqmpmin": 47409,
+   "time": 244.0,
    "traveltime": 215
   },
   "subset": [
@@ -717,11 +717,11 @@
  },
  {
   "stats": {
-   "ap": 48760,
-   "appmin": 248,
-   "area": 9251491,
+   "ap": 52199,
+   "appmin": 264,
+   "area": 11916676,
    "dist": 13702,
-   "fields": 18,
+   "fields": 20,
    "hs": 4,
    "hs_at": [
     4,
@@ -729,23 +729,23 @@
     6,
     1
    ],
-   "links": 20,
-   "nicetime": "3:16:30",
+   "links": 23,
+   "nicetime": "3:17:15",
    "nicetraveltime": "2:43:00",
    "portaltimes": [
     3.5,
     3.75,
-    3.25,
+    3.5,
     3.75,
     2.5,
     2.5,
     5.75,
-    3.25,
-    1.5,
+    3.5,
+    1.75,
     2.25
    ],
-   "sqmpmin": 47081,
-   "time": 196.5,
+   "sqmpmin": 60414,
+   "time": 197.25,
    "traveltime": 163
   },
   "subset": [
@@ -910,36 +910,35 @@
  },
  {
   "stats": {
-   "ap": 53886,
-   "appmin": 179,
+   "ap": 58888,
+   "appmin": 194,
    "area": 11876357,
-   "dist": 21773,
-   "fields": 20,
-   "hs": 3,
+   "dist": 22159,
+   "fields": 23,
+   "hs": 2,
    "hs_at": [
     10,
-    0,
     4
    ],
-   "links": 22,
-   "nicetime": "4:59:30",
-   "nicetraveltime": "4:22:00",
+   "links": 26,
+   "nicetime": "5:03:30",
+   "nicetraveltime": "4:28:00",
    "portaltimes": [
-    5.75,
+    3.5,
     4.0,
-    4.5,
-    2.75,
+    4.75,
+    2.25,
     2.75,
     3.25,
     3.25,
     3.5,
-    2.0,
-    1.5,
+    2.25,
+    1.75,
     2.5
    ],
-   "sqmpmin": 39653,
-   "time": 299.5,
-   "traveltime": 262
+   "sqmpmin": 39131,
+   "time": 303.5,
+   "traveltime": 268
   },
   "subset": [
    5,
@@ -992,7 +991,7 @@
    ],
    [
     0,
-    7,
+    null,
     0
    ],
    [
@@ -1071,8 +1070,13 @@
     2
    ],
    [
-    3,
     0,
+    7,
+    0
+   ],
+   [
+    0,
+    3,
     1
    ],
    [
@@ -1109,11 +1113,11 @@
  },
  {
   "stats": {
-   "ap": 62451,
-   "appmin": 256,
-   "area": 10578017,
+   "ap": 65577,
+   "appmin": 268,
+   "area": 11360780,
    "dist": 16504,
-   "fields": 24,
+   "fields": 26,
    "hs": 5,
    "hs_at": [
     2,
@@ -1122,25 +1126,25 @@
     5,
     10
    ],
-   "links": 27,
-   "nicetime": "4:03:45",
+   "links": 29,
+   "nicetime": "4:04:15",
    "nicetraveltime": "3:16:00",
    "portaltimes": [
     3.75,
     4.0,
     1.5,
-    3.75,
+    4.0,
     3.25,
     5.5,
     3.25,
     2.75,
-    3.5,
+    3.75,
     3.0,
     2.75,
     5.75
    ],
-   "sqmpmin": 43396,
-   "time": 243.75,
+   "sqmpmin": 46512,
+   "time": 244.25,
    "traveltime": 196
   },
   "subset": [
@@ -1332,11 +1336,11 @@
  },
  {
   "stats": {
-   "ap": 66327,
-   "appmin": 255,
-   "area": 12416921,
+   "ap": 72266,
+   "appmin": 277,
+   "area": 13416653,
    "dist": 17442,
-   "fields": 25,
+   "fields": 29,
    "hs": 6,
    "hs_at": [
     5,
@@ -1346,26 +1350,26 @@
     7,
     3
    ],
-   "links": 29,
-   "nicetime": "4:19:45",
+   "links": 32,
+   "nicetime": "4:20:30",
    "nicetraveltime": "3:30:00",
    "portaltimes": [
     2.75,
     3.5,
     3.25,
-    6.75,
+    7.0,
     3.0,
     8.5,
-    3.25,
+    3.5,
     2.5,
     2.25,
     3.5,
     2.5,
     1.5,
-    3.75
+    4.0
    ],
-   "sqmpmin": 47803,
-   "time": 259.75,
+   "sqmpmin": 51503,
+   "time": 260.5,
    "traveltime": 210
   },
   "subset": [
@@ -1578,11 +1582,11 @@
  },
  {
   "stats": {
-   "ap": 74266,
-   "appmin": 313,
-   "area": 11323423,
+   "ap": 78955,
+   "appmin": 332,
+   "area": 12173590,
    "dist": 16023,
-   "fields": 29,
+   "fields": 32,
    "hs": 6,
    "hs_at": [
     5,
@@ -1592,27 +1596,27 @@
     13,
     2
    ],
-   "links": 32,
-   "nicetime": "3:57:00",
+   "links": 35,
+   "nicetime": "3:57:45",
    "nicetraveltime": "3:12:00",
    "portaltimes": [
     2.5,
-    4.25,
+    4.5,
     1.5,
     3.75,
     3.25,
     2.5,
     2.25,
     3.5,
-    4.5,
+    4.75,
     3.75,
     2.5,
     2.75,
     3.0,
     2.75
    ],
-   "sqmpmin": 47778,
-   "time": 237.0,
+   "sqmpmin": 51203,
+   "time": 237.75,
    "traveltime": 192
   },
   "subset": [
@@ -1851,11 +1855,11 @@
  },
  {
   "stats": {
-   "ap": 82831,
-   "appmin": 253,
-   "area": 10188333,
+   "ap": 85644,
+   "appmin": 261,
+   "area": 12734572,
    "dist": 22798,
-   "fields": 33,
+   "fields": 35,
    "hs": 6,
    "hs_at": [
     13,
@@ -1865,14 +1869,14 @@
     9,
     5
    ],
-   "links": 37,
-   "nicetime": "5:27:15",
+   "links": 38,
+   "nicetime": "5:27:30",
    "nicetraveltime": "4:30:00",
    "portaltimes": [
     4.5,
     2.0,
     4.75,
-    5.25,
+    5.5,
     3.75,
     4.0,
     5.5,
@@ -1885,8 +1889,8 @@
     5.5,
     2.5
    ],
-   "sqmpmin": 31133,
-   "time": 327.25,
+   "sqmpmin": 38884,
+   "time": 327.5,
    "traveltime": 270
   },
   "subset": [
@@ -2214,27 +2218,27 @@
  },
  {
   "stats": {
-   "ap": 12815,
-   "appmin": 146,
-   "area": 201997,
+   "ap": 15941,
+   "appmin": 181,
+   "area": 1301253,
    "dist": 6317,
-   "fields": 1,
+   "fields": 3,
    "hs": 1,
    "hs_at": [
     4
    ],
-   "links": 5,
-   "nicetime": "1:27:15",
+   "links": 7,
+   "nicetime": "1:27:45",
    "nicetraveltime": "1:15:00",
    "portaltimes": [
     2.5,
-    1.0,
+    1.25,
     2.25,
-    2.5,
+    2.75,
     2.5
    ],
-   "sqmpmin": 2315,
-   "time": 87.25,
+   "sqmpmin": 14829,
+   "time": 87.75,
    "traveltime": 75
   },
   "subset": [
@@ -2294,28 +2298,28 @@
  },
  {
   "stats": {
-   "ap": 19191,
-   "appmin": 160,
-   "area": 2141769,
+   "ap": 22630,
+   "appmin": 187,
+   "area": 2660984,
    "dist": 8543,
-   "fields": 4,
+   "fields": 6,
    "hs": 1,
    "hs_at": [
     0
    ],
-   "links": 7,
-   "nicetime": "1:59:45",
+   "links": 10,
+   "nicetime": "2:00:30",
    "nicetraveltime": "1:45:00",
    "portaltimes": [
     2.5,
     1.25,
-    2.0,
     2.25,
     2.25,
-    2.75
+    2.25,
+    3.0
    ],
-   "sqmpmin": 17885,
-   "time": 119.75,
+   "sqmpmin": 22082,
+   "time": 120.5,
    "traveltime": 105
   },
   "subset": [
@@ -2391,29 +2395,29 @@
  },
  {
   "stats": {
-   "ap": 21817,
-   "appmin": 136,
-   "area": 2199387,
+   "ap": 26506,
+   "appmin": 164,
+   "area": 2440731,
    "dist": 11663,
-   "fields": 4,
+   "fields": 7,
    "hs": 1,
    "hs_at": [
     0
    ],
-   "links": 9,
-   "nicetime": "2:40:15",
+   "links": 12,
+   "nicetime": "2:41:00",
    "nicetraveltime": "2:21:00",
    "portaltimes": [
     2.75,
     1.25,
     2.25,
+    2.5,
     2.25,
-    2.25,
-    4.0,
-    2.75
+    4.25,
+    3.0
    ],
-   "sqmpmin": 13724,
-   "time": 160.25,
+   "sqmpmin": 15159,
+   "time": 161.0,
    "traveltime": 141
   },
   "subset": [
@@ -2500,8 +2504,8 @@
  },
  {
   "stats": {
-   "ap": 29130,
-   "appmin": 236,
+   "ap": 30382,
+   "appmin": 245,
    "area": 2929888,
    "dist": 8074,
    "fields": 8,
@@ -2510,21 +2514,21 @@
     0,
     7
    ],
-   "links": 10,
-   "nicetime": "2:03:00",
+   "links": 14,
+   "nicetime": "2:04:00",
    "nicetraveltime": "1:37:00",
    "portaltimes": [
     5.5,
     2.25,
-    2.75,
-    2.0,
+    3.0,
+    2.25,
     2.0,
     2.25,
     2.75,
-    5.5
+    5.75
    ],
-   "sqmpmin": 23820,
-   "time": 123.0,
+   "sqmpmin": 23628,
+   "time": 124.0,
    "traveltime": 97
   },
   "subset": [
@@ -2622,19 +2626,19 @@
  },
  {
   "stats": {
-   "ap": 35195,
-   "appmin": 184,
-   "area": 2837553,
+   "ap": 37071,
+   "appmin": 193,
+   "area": 3004705,
    "dist": 13486,
-   "fields": 10,
+   "fields": 11,
    "hs": 3,
    "hs_at": [
     6,
     3,
     1
    ],
-   "links": 15,
-   "nicetime": "3:10:45",
+   "links": 17,
+   "nicetime": "3:11:15",
    "nicetraveltime": "2:44:00",
    "portaltimes": [
     2.0,
@@ -2645,10 +2649,10 @@
     2.75,
     4.0,
     2.75,
-    2.75
+    3.0
    ],
-   "sqmpmin": 14875,
-   "time": 190.75,
+   "sqmpmin": 15710,
+   "time": 191.25,
    "traveltime": 164
   },
   "subset": [
@@ -2772,9 +2776,9 @@
  },
  {
   "stats": {
-   "ap": 46260,
-   "appmin": 254,
-   "area": 3821802,
+   "ap": 46573,
+   "appmin": 255,
+   "area": 4755701,
    "dist": 12282,
    "fields": 16,
    "hs": 4,
@@ -2784,23 +2788,23 @@
     3,
     2
    ],
-   "links": 20,
-   "nicetime": "3:02:00",
+   "links": 21,
+   "nicetime": "3:02:15",
    "nicetraveltime": "2:29:00",
    "portaltimes": [
-    3.5,
+    3.25,
     3.0,
     1.5,
     2.5,
-    2.25,
+    2.75,
     3.5,
     2.25,
     5.5,
     3.25,
     2.75
    ],
-   "sqmpmin": 20998,
-   "time": 182.0,
+   "sqmpmin": 26094,
+   "time": 182.25,
    "traveltime": 149
   },
   "subset": [
@@ -2848,7 +2852,7 @@
    ],
    [
     4,
-    0,
+    null,
     0
    ],
    [
@@ -2910,6 +2914,11 @@
     0,
     3,
     2
+   ],
+   [
+    0,
+    4,
+    0
    ],
    [
     4,
@@ -3145,25 +3154,25 @@
  },
  {
   "stats": {
-   "ap": 55575,
-   "appmin": 239,
-   "area": 7429240,
+   "ap": 59951,
+   "appmin": 258,
+   "area": 7796233,
    "dist": 16164,
-   "fields": 19,
+   "fields": 22,
    "hs": 3,
    "hs_at": [
     4,
     5,
     9
    ],
-   "links": 25,
-   "nicetime": "3:51:45",
+   "links": 27,
+   "nicetime": "3:52:15",
    "nicetraveltime": "3:15:00",
    "portaltimes": [
     2.25,
     4.25,
-    1.5,
-    3.25,
+    1.75,
+    3.5,
     4.25,
     2.5,
     2.25,
@@ -3173,8 +3182,8 @@
     2.25,
     3.5
    ],
-   "sqmpmin": 32057,
-   "time": 231.75,
+   "sqmpmin": 33568,
+   "time": 232.25,
    "traveltime": 195
   },
   "subset": [
@@ -3351,11 +3360,11 @@
  },
  {
   "stats": {
-   "ap": 62264,
-   "appmin": 233,
-   "area": 8542167,
+   "ap": 66640,
+   "appmin": 249,
+   "area": 8661407,
    "dist": 18264,
-   "fields": 22,
+   "fields": 25,
    "hs": 4,
    "hs_at": [
     1,
@@ -3363,17 +3372,17 @@
     10,
     6
    ],
-   "links": 28,
-   "nicetime": "4:27:00",
+   "links": 30,
+   "nicetime": "4:27:30",
    "nicetraveltime": "3:40:00",
    "portaltimes": [
     2.25,
     8.5,
     3.0,
     2.5,
-    3.75,
+    4.0,
     3.5,
-    1.25,
+    1.5,
     2.25,
     3.25,
     2.75,
@@ -3381,8 +3390,8 @@
     3.5,
     2.25
    ],
-   "sqmpmin": 31993,
-   "time": 267.0,
+   "sqmpmin": 32379,
+   "time": 267.5,
    "traveltime": 220
   },
   "subset": [
@@ -3575,29 +3584,29 @@
  },
  {
   "stats": {
-   "ap": 68953,
-   "appmin": 282,
-   "area": 6750423,
+   "ap": 73329,
+   "appmin": 300,
+   "area": 7467867,
    "dist": 15751,
-   "fields": 25,
+   "fields": 28,
    "hs": 3,
    "hs_at": [
     11,
     12,
     7
    ],
-   "links": 31,
-   "nicetime": "4:03:45",
+   "links": 33,
+   "nicetime": "4:04:15",
    "nicetraveltime": "3:08:00",
    "portaltimes": [
     2.25,
     2.25,
     3.5,
-    3.0,
+    3.25,
     3.25,
     2.5,
     3.25,
-    1.0,
+    1.25,
     3.25,
     3.25,
     3.25,
@@ -3605,8 +3614,8 @@
     5.75,
     4.0
    ],
-   "sqmpmin": 27694,
-   "time": 243.75,
+   "sqmpmin": 30574,
+   "time": 244.25,
    "traveltime": 188
   },
   "subset": [
@@ -3815,11 +3824,11 @@
  },
  {
   "stats": {
-   "ap": 75329,
-   "appmin": 233,
-   "area": 9483995,
+   "ap": 80018,
+   "appmin": 246,
+   "area": 9928342,
    "dist": 22162,
-   "fields": 28,
+   "fields": 31,
    "hs": 6,
    "hs_at": [
     5,
@@ -3829,17 +3838,17 @@
     2,
     1
    ],
-   "links": 33,
-   "nicetime": "5:23:15",
+   "links": 36,
+   "nicetime": "5:24:00",
    "nicetraveltime": "4:25:00",
    "portaltimes": [
     2.5,
-    6.75,
+    7.0,
     1.25,
-    5.0,
+    5.25,
     2.25,
     6.25,
-    3.25,
+    3.5,
     2.25,
     3.5,
     3.5,
@@ -3849,8 +3858,8 @@
     5.75,
     5.25
    ],
-   "sqmpmin": 29339,
-   "time": 323.25,
+   "sqmpmin": 30643,
+   "time": 324.0,
    "traveltime": 265
   },
   "subset": [
@@ -4075,26 +4084,26 @@
  },
  {
   "stats": {
-   "ap": 13315,
-   "appmin": 199,
+   "ap": 14878,
+   "appmin": 222,
    "area": 1974416,
    "dist": 4612,
-   "fields": 3,
+   "fields": 4,
    "hs": 1,
    "hs_at": [
     1
    ],
-   "links": 5,
-   "nicetime": "1:06:45",
+   "links": 6,
+   "nicetime": "1:07:00",
    "nicetraveltime": "0:57:00",
    "portaltimes": [
     2.5,
     2.5,
-    1.25,
+    1.5,
     2.25
    ],
-   "sqmpmin": 29579,
-   "time": 66.75,
+   "sqmpmin": 29468,
+   "time": 67.0,
    "traveltime": 57
   },
   "subset": [
@@ -4143,25 +4152,25 @@
  },
  {
   "stats": {
-   "ap": 18128,
-   "appmin": 177,
-   "area": 1168900,
+   "ap": 18754,
+   "appmin": 182,
+   "area": 2164034,
    "dist": 7278,
    "fields": 5,
    "hs": 0,
    "hs_at": [],
-   "links": 6,
-   "nicetime": "1:42:00",
+   "links": 8,
+   "nicetime": "1:42:30",
    "nicetraveltime": "1:29:00",
    "portaltimes": [
     3.0,
     2.25,
-    3.25,
+    3.5,
     1.25,
     2.25
    ],
-   "sqmpmin": 11459,
-   "time": 102.0,
+   "sqmpmin": 21112,
+   "time": 102.5,
    "traveltime": 89
   },
   "subset": [
@@ -4226,28 +4235,28 @@
  },
  {
   "stats": {
-   "ap": 17315,
-   "appmin": 144,
-   "area": 1536938,
+   "ap": 22630,
+   "appmin": 187,
+   "area": 2449521,
    "dist": 8377,
-   "fields": 3,
+   "fields": 6,
    "hs": 1,
    "hs_at": [
     0
    ],
-   "links": 5,
-   "nicetime": "1:59:45",
+   "links": 10,
+   "nicetime": "2:01:00",
    "nicetraveltime": "1:42:00",
    "portaltimes": [
     5.5,
+    3.25,
     3.0,
-    2.75,
-    1.0,
-    2.0,
-    2.0
+    1.25,
+    2.25,
+    2.25
    ],
-   "sqmpmin": 12834,
-   "time": 119.75,
+   "sqmpmin": 20243,
+   "time": 121.0,
    "traveltime": 102
   },
   "subset": [
@@ -4323,29 +4332,29 @@
  },
  {
   "stats": {
-   "ap": 24630,
-   "appmin": 229,
-   "area": 1963346,
+   "ap": 26506,
+   "appmin": 245,
+   "area": 2074030,
    "dist": 7440,
-   "fields": 6,
+   "fields": 7,
    "hs": 1,
    "hs_at": [
     3
    ],
-   "links": 10,
-   "nicetime": "1:47:30",
+   "links": 12,
+   "nicetime": "1:48:00",
    "nicetraveltime": "1:29:00",
    "portaltimes": [
     1.5,
     2.0,
     2.5,
-    2.75,
+    3.0,
     3.25,
-    2.75,
+    3.0,
     2.25
    ],
-   "sqmpmin": 18263,
-   "time": 107.5,
+   "sqmpmin": 19203,
+   "time": 108.0,
    "traveltime": 89
   },
   "subset": [
@@ -4437,32 +4446,32 @@
  },
  {
   "stats": {
-   "ap": 30069,
-   "appmin": 219,
-   "area": 2192908,
+   "ap": 33195,
+   "appmin": 240,
+   "area": 2332046,
    "dist": 9500,
-   "fields": 8,
+   "fields": 10,
    "hs": 3,
    "hs_at": [
     2,
     5,
     3
    ],
-   "links": 13,
-   "nicetime": "2:17:15",
+   "links": 15,
+   "nicetime": "2:17:45",
    "nicetraveltime": "1:55:00",
    "portaltimes": [
     2.25,
     2.75,
     2.5,
     3.5,
-    2.0,
+    2.25,
     3.0,
     1.25,
     2.25
    ],
-   "sqmpmin": 15977,
-   "time": 137.25,
+   "sqmpmin": 16929,
+   "time": 137.75,
    "traveltime": 115
   },
   "subset": [
@@ -4575,33 +4584,33 @@
  },
  {
   "stats": {
-   "ap": 35195,
-   "appmin": 246,
-   "area": 3394421,
+   "ap": 39884,
+   "appmin": 277,
+   "area": 4315456,
    "dist": 9639,
-   "fields": 10,
+   "fields": 13,
    "hs": 3,
    "hs_at": [
     3,
     4,
     7
    ],
-   "links": 15,
-   "nicetime": "2:22:45",
+   "links": 18,
+   "nicetime": "2:23:30",
    "nicetraveltime": "1:54:00",
    "portaltimes": [
     3.25,
     2.75,
     1.25,
-    3.5,
+    3.75,
     2.5,
-    2.5,
+    2.75,
     3.0,
-    5.75,
+    6.0,
     3.0
    ],
-   "sqmpmin": 23778,
-   "time": 142.75,
+   "sqmpmin": 30072,
+   "time": 143.5,
    "traveltime": 114
   },
   "subset": [
@@ -4730,18 +4739,18 @@
  },
  {
   "stats": {
-   "ap": 43760,
-   "appmin": 209,
-   "area": 3887546,
+   "ap": 46573,
+   "appmin": 222,
+   "area": 4145527,
    "dist": 15128,
-   "fields": 14,
+   "fields": 16,
    "hs": 2,
    "hs_at": [
     5,
     9
    ],
-   "links": 20,
-   "nicetime": "3:29:00",
+   "links": 21,
+   "nicetime": "3:29:15",
    "nicetraveltime": "2:58:00",
    "portaltimes": [
     3.0,
@@ -4755,8 +4764,8 @@
     3.25,
     2.5
    ],
-   "sqmpmin": 18600,
-   "time": 209.0,
+   "sqmpmin": 19811,
+   "time": 209.25,
    "traveltime": 178
   },
   "subset": [
@@ -4906,23 +4915,23 @@
  },
  {
   "stats": {
-   "ap": 53262,
-   "appmin": 239,
-   "area": 6354643,
+   "ap": 56075,
+   "appmin": 251,
+   "area": 7583267,
    "dist": 15600,
-   "fields": 19,
+   "fields": 21,
    "hs": 3,
    "hs_at": [
     9,
     3,
     4
    ],
-   "links": 24,
-   "nicetime": "3:42:30",
+   "links": 25,
+   "nicetime": "3:42:45",
    "nicetraveltime": "3:04:00",
    "portaltimes": [
     3.25,
-    4.5,
+    4.75,
     2.75,
     2.5,
     3.25,
@@ -4933,8 +4942,8 @@
     7.0,
     3.75
    ],
-   "sqmpmin": 28560,
-   "time": 222.5,
+   "sqmpmin": 34043,
+   "time": 222.75,
    "traveltime": 184
   },
   "subset": [
@@ -5110,38 +5119,37 @@
  },
  {
   "stats": {
-   "ap": 58075,
-   "appmin": 267,
-   "area": 5900377,
-   "dist": 15010,
-   "fields": 21,
-   "hs": 4,
+   "ap": 62764,
+   "appmin": 262,
+   "area": 7847793,
+   "dist": 16713,
+   "fields": 24,
+   "hs": 3,
    "hs_at": [
     1,
     3,
-    5,
-    6
+    5
    ],
-   "links": 25,
-   "nicetime": "3:36:45",
-   "nicetraveltime": "2:59:00",
+   "links": 28,
+   "nicetime": "3:59:00",
+   "nicetraveltime": "3:20:00",
    "portaltimes": [
-    4.75,
+    4.5,
     5.0,
     3.0,
     2.5,
-    4.25,
+    4.5,
     2.5,
-    2.75,
+    3.5,
     1.25,
-    3.0,
+    3.25,
     2.25,
-    2.75,
+    3.0,
     2.25
    ],
-   "sqmpmin": 27222,
-   "time": 216.75,
-   "traveltime": 179
+   "sqmpmin": 32835,
+   "time": 239.0,
+   "traveltime": 200
   },
   "subset": [
    2,
@@ -5215,7 +5223,7 @@
    ],
    [
     6,
-    5,
+    null,
     0
    ],
    [
@@ -5259,9 +5267,14 @@
     1
    ],
    [
-    0,
     6,
+    0,
     1
+   ],
+   [
+    6,
+    5,
+    0
    ],
    [
     0,
@@ -5332,11 +5345,11 @@
  },
  {
   "stats": {
-   "ap": 63514,
-   "appmin": 305,
-   "area": 6678322,
+   "ap": 66640,
+   "appmin": 319,
+   "area": 7761982,
    "dist": 13506,
-   "fields": 23,
+   "fields": 25,
    "hs": 4,
    "hs_at": [
     11,
@@ -5344,13 +5357,13 @@
     4,
     12
    ],
-   "links": 28,
-   "nicetime": "3:28:00",
+   "links": 30,
+   "nicetime": "3:28:30",
    "nicetraveltime": "2:38:00",
    "portaltimes": [
     3.5,
     2.0,
-    5.75,
+    6.0,
     2.25,
     5.75,
     3.25,
@@ -5358,12 +5371,12 @@
     3.25,
     3.25,
     3.0,
-    4.0,
+    4.25,
     5.5,
     2.75
    ],
-   "sqmpmin": 32107,
-   "time": 208.0,
+   "sqmpmin": 37227,
+   "time": 208.5,
    "traveltime": 158
   },
   "subset": [
@@ -5556,38 +5569,39 @@
  },
  {
   "stats": {
-   "ap": 63951,
-   "appmin": 262,
-   "area": 5980058,
+   "ap": 70516,
+   "appmin": 288,
+   "area": 7705429,
    "dist": 16406,
-   "fields": 22,
-   "hs": 3,
+   "fields": 26,
+   "hs": 4,
    "hs_at": [
+    12,
     7,
     0,
     9
    ],
-   "links": 27,
-   "nicetime": "4:03:15",
+   "links": 32,
+   "nicetime": "4:04:30",
    "nicetraveltime": "3:13:00",
    "portaltimes": [
-    7.5,
-    3.0,
+    7.25,
+    3.25,
     2.0,
     3.75,
     3.25,
-    4.0,
-    3.25,
+    4.25,
+    3.5,
     2.5,
-    4.0,
+    4.25,
     5.5,
     3.25,
     2.25,
     1.25,
     3.25
    ],
-   "sqmpmin": 24584,
-   "time": 243.25,
+   "sqmpmin": 31515,
+   "time": 244.5,
    "traveltime": 193
   },
   "subset": [
@@ -5808,8 +5822,8 @@
     1
    ],
    [
-    12,
     0,
+    12,
     1
    ],
    [
@@ -5823,7 +5837,7 @@
   "stats": {
    "ap": 74392,
    "appmin": 232,
-   "area": 7703675,
+   "area": 7824521,
    "dist": 22605,
    "fields": 27,
    "hs": 5,
@@ -5854,7 +5868,7 @@
     2.75,
     4.0
    ],
-   "sqmpmin": 24036,
+   "sqmpmin": 24413,
    "time": 320.5,
    "traveltime": 269
   },
@@ -6141,27 +6155,27 @@
  },
  {
   "stats": {
-   "ap": 17191,
-   "appmin": 168,
-   "area": 2448723,
+   "ap": 18754,
+   "appmin": 182,
+   "area": 4283520,
    "dist": 7374,
-   "fields": 4,
+   "fields": 5,
    "hs": 1,
    "hs_at": [
     2
    ],
-   "links": 7,
-   "nicetime": "1:42:15",
+   "links": 8,
+   "nicetime": "1:42:30",
    "nicetraveltime": "1:30:00",
    "portaltimes": [
-    1.5,
-    2.25,
+    1.75,
+    2.75,
     2.5,
     2.0,
     2.25
    ],
-   "sqmpmin": 23948,
-   "time": 102.25,
+   "sqmpmin": 41790,
+   "time": 102.5,
    "traveltime": 90
   },
   "subset": [
@@ -6208,8 +6222,8 @@
     1
    ],
    [
-    1,
     0,
+    1,
     1
    ],
    [
@@ -6226,28 +6240,28 @@
  },
  {
   "stats": {
-   "ap": 19504,
-   "appmin": 139,
-   "area": 3884318,
+   "ap": 22630,
+   "appmin": 161,
+   "area": 4640184,
    "dist": 10102,
-   "fields": 4,
+   "fields": 6,
    "hs": 1,
    "hs_at": [
     1
    ],
-   "links": 8,
-   "nicetime": "2:20:00",
+   "links": 10,
+   "nicetime": "2:20:30",
    "nicetraveltime": "2:03:00",
    "portaltimes": [
     2.5,
     5.5,
-    2.5,
-    2.0,
+    2.75,
+    2.25,
     2.25,
     2.25
    ],
-   "sqmpmin": 27745,
-   "time": 140.0,
+   "sqmpmin": 33026,
+   "time": 140.5,
    "traveltime": 123
   },
   "subset": [
@@ -6318,30 +6332,30 @@
  },
  {
   "stats": {
-   "ap": 24630,
-   "appmin": 129,
-   "area": 4881670,
+   "ap": 29319,
+   "appmin": 154,
+   "area": 5925707,
    "dist": 13990,
-   "fields": 6,
+   "fields": 9,
    "hs": 2,
    "hs_at": [
     6,
     0
    ],
-   "links": 10,
-   "nicetime": "3:09:30",
+   "links": 13,
+   "nicetime": "3:10:15",
    "nicetraveltime": "2:50:00",
    "portaltimes": [
     1.5,
-    3.0,
     3.25,
-    2.5,
+    3.5,
+    2.75,
     2.25,
     2.25,
     2.5
    ],
-   "sqmpmin": 25760,
-   "time": 189.5,
+   "sqmpmin": 31146,
+   "time": 190.25,
    "traveltime": 170
   },
   "subset": [
@@ -6438,8 +6452,8 @@
  },
  {
   "stats": {
-   "ap": 32569,
-   "appmin": 201,
+   "ap": 33195,
+   "appmin": 204,
    "area": 6486511,
    "dist": 11482,
    "fields": 10,
@@ -6448,11 +6462,11 @@
     4,
     3
    ],
-   "links": 13,
-   "nicetime": "2:41:45",
+   "links": 15,
+   "nicetime": "2:42:15",
    "nicetraveltime": "2:16:00",
    "portaltimes": [
-    2.75,
+    3.0,
     1.5,
     2.0,
     3.0,
@@ -6461,8 +6475,8 @@
     3.25,
     3.25
    ],
-   "sqmpmin": 40102,
-   "time": 161.75,
+   "sqmpmin": 39978,
+   "time": 162.25,
    "traveltime": 136
   },
   "subset": [
@@ -6493,7 +6507,7 @@
    ],
    [
     5,
-    0,
+    null,
     0
    ],
    [
@@ -6560,6 +6574,11 @@
     0,
     4,
     1
+   ],
+   [
+    0,
+    5,
+    0
    ],
    [
     1,
@@ -6575,17 +6594,17 @@
  },
  {
   "stats": {
-   "ap": 36758,
-   "appmin": 186,
-   "area": 5052065,
+   "ap": 39884,
+   "appmin": 201,
+   "area": 6526085,
    "dist": 13658,
-   "fields": 11,
+   "fields": 13,
    "hs": 1,
    "hs_at": [
     3
    ],
-   "links": 16,
-   "nicetime": "3:17:00",
+   "links": 18,
+   "nicetime": "3:17:30",
    "nicetraveltime": "2:43:00",
    "portaltimes": [
     3.25,
@@ -6593,13 +6612,13 @@
     2.25,
     11.5,
     2.75,
-    2.75,
-    3.25,
+    3.0,
+    3.5,
     2.25,
     2.25
    ],
-   "sqmpmin": 25645,
-   "time": 197.0,
+   "sqmpmin": 33043,
+   "time": 197.5,
    "traveltime": 163
   },
   "subset": [
@@ -6723,17 +6742,17 @@
  },
  {
   "stats": {
-   "ap": 43447,
-   "appmin": 177,
-   "area": 6310627,
+   "ap": 46573,
+   "appmin": 190,
+   "area": 6632766,
    "dist": 17950,
-   "fields": 14,
+   "fields": 16,
    "hs": 1,
    "hs_at": [
     5
    ],
-   "links": 19,
-   "nicetime": "4:04:15",
+   "links": 21,
+   "nicetime": "4:04:45",
    "nicetraveltime": "3:34:00",
    "portaltimes": [
     2.25,
@@ -6743,12 +6762,12 @@
     2.25,
     3.5,
     3.75,
-    2.0,
+    2.25,
     2.25,
     3.25
    ],
-   "sqmpmin": 25836,
-   "time": 244.25,
+   "sqmpmin": 27100,
+   "time": 244.75,
    "traveltime": 214
   },
   "subset": [
@@ -6893,18 +6912,18 @@
  },
  {
   "stats": {
-   "ap": 50136,
-   "appmin": 207,
-   "area": 7329224,
+   "ap": 53262,
+   "appmin": 219,
+   "area": 7651363,
    "dist": 17281,
-   "fields": 17,
+   "fields": 19,
    "hs": 2,
    "hs_at": [
     10,
     6
    ],
-   "links": 22,
-   "nicetime": "4:02:00",
+   "links": 24,
+   "nicetime": "4:02:30",
    "nicetraveltime": "3:29:00",
    "portaltimes": [
     2.25,
@@ -6914,13 +6933,13 @@
     2.5,
     3.5,
     4.25,
-    2.0,
+    2.25,
     2.25,
     3.5,
     2.5
    ],
-   "sqmpmin": 30286,
-   "time": 242.0,
+   "sqmpmin": 31552,
+   "time": 242.5,
    "traveltime": 209
   },
   "subset": [
@@ -7081,36 +7100,36 @@
  },
  {
   "stats": {
-   "ap": 56825,
-   "appmin": 232,
-   "area": 6681868,
+   "ap": 59951,
+   "appmin": 244,
+   "area": 8120813,
    "dist": 17143,
-   "fields": 20,
+   "fields": 22,
    "hs": 3,
    "hs_at": [
     5,
     9,
     3
    ],
-   "links": 25,
-   "nicetime": "4:04:45",
+   "links": 27,
+   "nicetime": "4:05:15",
    "nicetraveltime": "3:25:00",
    "portaltimes": [
     2.25,
     2.25,
     1.75,
     2.5,
-    4.25,
+    4.5,
     5.5,
     4.0,
-    2.5,
+    2.75,
     3.5,
     2.5,
     2.75,
     3.5
    ],
-   "sqmpmin": 27300,
-   "time": 244.75,
+   "sqmpmin": 33112,
+   "time": 245.25,
    "traveltime": 205
   },
   "subset": [
@@ -7297,11 +7316,11 @@
  },
  {
   "stats": {
-   "ap": 60701,
-   "appmin": 198,
-   "area": 8805715,
+   "ap": 66640,
+   "appmin": 217,
+   "area": 8952923,
    "dist": 21496,
-   "fields": 21,
+   "fields": 25,
    "hs": 4,
    "hs_at": [
     11,
@@ -7309,26 +7328,26 @@
     0,
     9
    ],
-   "links": 27,
-   "nicetime": "5:05:15",
+   "links": 30,
+   "nicetime": "5:06:00",
    "nicetraveltime": "4:18:00",
    "portaltimes": [
     2.75,
-    3.0,
+    3.25,
     3.75,
     2.25,
     5.5,
-    3.5,
+    3.75,
     2.25,
-    3.0,
+    3.25,
     1.5,
     2.75,
     3.0,
     2.5,
     3.5
    ],
-   "sqmpmin": 28847,
-   "time": 305.25,
+   "sqmpmin": 29257,
+   "time": 306.0,
    "traveltime": 258
   },
   "subset": [
@@ -7526,11 +7545,11 @@
  },
  {
   "stats": {
-   "ap": 68640,
-   "appmin": 198,
-   "area": 10179579,
+   "ap": 73329,
+   "appmin": 211,
+   "area": 10328557,
    "dist": 24906,
-   "fields": 25,
+   "fields": 28,
    "hs": 7,
    "hs_at": [
     9,
@@ -7541,27 +7560,27 @@
     2,
     3
    ],
-   "links": 30,
-   "nicetime": "5:46:00",
+   "links": 33,
+   "nicetime": "5:46:45",
    "nicetraveltime": "4:58:00",
    "portaltimes": [
     2.75,
-    3.0,
+    3.25,
     7.5,
     2.5,
     2.5,
     4.0,
-    4.75,
+    5.0,
     2.5,
-    2.75,
+    3.0,
     3.5,
     2.5,
     3.0,
     1.5,
     3.75
    ],
-   "sqmpmin": 29420,
-   "time": 346.0,
+   "sqmpmin": 29786,
+   "time": 346.75,
    "traveltime": 298
   },
   "subset": [
@@ -7790,11 +7809,11 @@
  },
  {
   "stats": {
-   "ap": 76892,
-   "appmin": 285,
-   "area": 11325489,
+   "ap": 80018,
+   "appmin": 296,
+   "area": 11472697,
    "dist": 17795,
-   "fields": 29,
+   "fields": 31,
    "hs": 5,
    "hs_at": [
     6,
@@ -7803,8 +7822,8 @@
     12,
     5
    ],
-   "links": 34,
-   "nicetime": "4:29:00",
+   "links": 36,
+   "nicetime": "4:29:30",
    "nicetraveltime": "3:30:00",
    "portaltimes": [
     3.5,
@@ -7816,15 +7835,15 @@
     11.5,
     2.25,
     3.0,
-    3.0,
-    4.0,
+    3.25,
+    4.25,
     3.5,
     2.5,
     2.5,
     2.75
    ],
-   "sqmpmin": 42102,
-   "time": 269.0,
+   "sqmpmin": 42570,
+   "time": 269.5,
    "traveltime": 210
   },
   "subset": [

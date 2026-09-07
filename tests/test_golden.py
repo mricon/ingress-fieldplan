@@ -199,6 +199,68 @@ def check_subset_invariants():
     return fails
 
 
+def check_plan_accounting():
+    """Every link and field in the plan must be counted, and the graph's
+    own bookkeeping must survive improve_workplan.
+
+    Both of these were broken: get_workplan_stats skipped links whose
+    target was portal 0 because it tested 'if not q', and improve_workplan
+    renumbered only the first a.size() workplan entries, so edge 'order'
+    came out with duplicates and holes.
+    """
+    fails = []
+    reset_state()
+    portals, waypoints = text_interface.get_portals_from_file(os.path.join(HERE, 'fixtures', 'waypoints.txt'))
+    maxfield.populate_graphs(portals, waypoints)
+    maxfield.gen_distance_matrix(None)
+    np.random.seed(SEED)
+
+    checked = 0
+    for _ in range(12):
+        b = maxfield.portal_graph.copy()
+        workplan, stats = solve_iteration(b, False)
+        if workplan is None:
+            continue
+        checked += 1
+
+        links = [w for w in workplan if w[1] is not None]
+        if stats['links'] != len(links):
+            fails.append('stats counted %d links, plan has %d (portal 0 as a target?)'
+                         % (stats['links'], len(links)))
+        if stats['fields'] != sum(w[2] for w in workplan):
+            fails.append('stats counted %d fields, plan has %d'
+                         % (stats['fields'], sum(w[2] for w in workplan)))
+
+        # AP is fully determined by the counts, so this catches a miscount
+        # from either direction
+        want_ap = (b.order() * maxfield.CAPTUREAP + stats['links'] * maxfield.LINKAP
+                   + stats['fields'] * maxfield.FIELDAP)
+        if stats['ap'] != want_ap:
+            fails.append('ap is %d, but the counts imply %d' % (stats['ap'], want_ap))
+
+        orders = sorted(b.edges[e]['order'] for e in b.edges())
+        if orders != list(range(b.size())):
+            fails.append('edge orders are not 0..%d after improve_workplan: %s'
+                         % (b.size() - 1, orders))
+
+        # A triangle is completed by exactly one link, so it must be
+        # recorded on exactly one edge
+        homes = dict()
+        for e in b.edges():
+            for t in b.edges[e]['fields']:
+                key = tuple(sorted(int(v) for v in t))
+                homes[key] = homes.get(key, 0) + 1
+        doubled = [k for k, v in homes.items() if v > 1]
+        if doubled:
+            fails.append('triangles recorded on more than one edge: %s' % (doubled[:3],))
+        if fails:
+            break
+
+    if not checked:
+        fails.append('no plans were produced to check')
+    return fails
+
+
 def check_module_defaults():
     """A library caller who configures nothing must still get the whole algorithm.
 
@@ -284,6 +346,7 @@ def main():
 
     if not record:
         for label, check in (('subset invariants', check_subset_invariants),
+                             ('plan accounting', check_plan_accounting),
                              ('module defaults', check_module_defaults)):
             fails = check()
             for msg in fails:
