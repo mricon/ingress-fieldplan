@@ -250,7 +250,8 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     logger.info('Total workplan distance: %0.2f km', totalkm)
     logger.info('Total workplan play time: %s (%s %s)',
                 stats['nicetime'], stats['nicetraveltime'], travelmode)
-    logger.info('Total AP: %s (%s without capturing)', stats['ap'], stats['ap'] - (a.order()*maxfield.CAPTUREAP))
+    logger.info('Total AP: %s (%s without capturing)', stats['ap'],
+                stats['ap'] - (maxfield.count_capturable(a) * maxfield.CAPTUREAP))
     if stats['hs']:
         logger.info('Total %s needed: %s', maxfield.cooling.upper(), stats['hs'])
     if nosave:

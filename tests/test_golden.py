@@ -76,7 +76,7 @@ def reset_state():
     maxfield.seen_subsets = list()
     maxfield.active_graph = None
     maxfield.waypoint_graph = None
-    maxfield._active_tables = (None, None, None, None)
+    maxfield._active_tables = (None, None, None, None, None, 0)
     maxfield.minap = None
     maxfield.maxmu = False
     maxfield.maxtime = None
@@ -171,7 +171,7 @@ def check_subset_invariants():
 
     # The hot loops read these tables by active-graph node id, so every cell
     # has to be the full-graph cell its endpoints' 'pos' values name
-    dist, tim, blocker, keys = maxfield.get_active_tables()
+    dist, tim, blocker, keys, ncapture = maxfield.get_active_tables()
     for name, table, master in (('dist', dist, maxfield.dist_matrix), ('time', tim, maxfield.time_matrix)):
         bad = [(i, j) for i in range(b.order()) for j in range(b.order())
                if table[i][j] != int(master[b.nodes[i]['pos']][b.nodes[j]['pos']])]
@@ -234,7 +234,8 @@ def check_plan_accounting():
 
         # AP is fully determined by the counts, so this catches a miscount
         # from either direction
-        want_ap = (b.order() * maxfield.CAPTUREAP + stats['links'] * maxfield.LINKAP
+        want_ap = (maxfield.count_capturable(b) * maxfield.CAPTUREAP
+                   + stats['links'] * maxfield.LINKAP
                    + stats['fields'] * maxfield.FIELDAP)
         if stats['ap'] != want_ap:
             fails.append('ap is %d, but the counts imply %d' % (stats['ap'], want_ap))
@@ -554,6 +555,58 @@ def check_no_links_before_blockers():
     return fails
 
 
+def check_waypoints_earn_no_capture_ap():
+    """
+    Only real portals pay capture AP.
+
+    totalap used to be active_graph.order() * CAPTUREAP, and active_graph
+    includes the waypoints, so a start waypoint, an end waypoint and a
+    blocker were each credited with a full capture. On waypoints.txt that
+    was 3 x CAPTUREAP of AP for portals nobody takes -- over 10% of the
+    plan's total. You stand at a start or end waypoint, and you knock a
+    blocker down rather than capture it; what that pays depends on its
+    remaining resonators and links, which the portal list does not record,
+    so it counts for nothing and comes as a bonus.
+    """
+    fails = []
+    reset_state()
+    portals, waypoints = text_interface.get_portals_from_file(
+        os.path.join(HERE, 'fixtures', 'waypoints.txt'))
+    maxfield.populate_graphs(portals, waypoints)
+    maxfield.gen_distance_matrix(None)
+    np.random.seed(SEED)
+
+    b = maxfield.portal_graph.copy()
+    workplan, stats = solve_iteration(b, False)
+    if workplan is None:
+        return ['no workplan to check']
+
+    n_portals = len(portals)
+    n_waypoints = len(waypoints)
+    if not n_waypoints:
+        return ['waypoints.txt no longer has waypoints, so this checks nothing']
+    if b.order() != n_portals + n_waypoints:
+        fails.append('graph has %d nodes for %d portals and %d waypoints'
+                     % (b.order(), n_portals, n_waypoints))
+    if maxfield.count_capturable(b) != n_portals:
+        fails.append('count_capturable says %d of %d nodes are portals, want %d'
+                     % (maxfield.count_capturable(b), b.order(), n_portals))
+
+    capture_ap = stats['ap'] - (stats['links'] * maxfield.LINKAP
+                                + stats['fields'] * maxfield.FIELDAP)
+    if capture_ap != n_portals * maxfield.CAPTUREAP:
+        fails.append('capture AP is %d, which is %.2f portals; want %d for %d portals'
+                     % (capture_ap, capture_ap / float(maxfield.CAPTUREAP),
+                        n_portals * maxfield.CAPTUREAP, n_portals))
+
+    # Every waypoint kind has to be excluded, not just the blocker
+    for special in ('_w_start', '_w_end', '_w_blocker'):
+        nodes = [i for i in range(b.order()) if b.nodes[i].get('special') == special]
+        if not nodes:
+            fails.append('waypoints.txt no longer has a %s to check' % special)
+    return fails
+
+
 def check_minap_rejection():
     """
     An AP floor must reject a plan, never hand back a half-built one.
@@ -668,13 +721,16 @@ def main():
     record = '--record' in sys.argv
     failed = False
     os.makedirs(os.path.join(HERE, 'golden'), exist_ok=True)
+    # Recording holds every fixture until all of them have run, then writes.
+    # Writing as each one finished meant a run killed part way through -- the
+    # OOM killer, a Ctrl-C -- left some goldens on the new behaviour and some
+    # on the old, which is far worse than having recorded nothing.
+    pending = []
     for name, (filename, iterations) in FIXTURES.items():
         golden_path = os.path.join(HERE, 'golden', name + '.json')
         results = run_fixture(filename, iterations)
         if record:
-            with open(golden_path, 'w') as fh:
-                json.dump(results, fh, indent=1, sort_keys=True)
-            print('recorded %s (%d iterations)' % (golden_path, iterations))
+            pending.append((golden_path, results, iterations))
             continue
         with open(golden_path) as fh:
             golden = json.load(fh)
@@ -689,9 +745,7 @@ def main():
         golden_path = os.path.join(HERE, 'golden', name + '.json')
         results = run_subset_fixture(filename, iterations, maxmu)
         if record:
-            with open(golden_path, 'w') as fh:
-                json.dump(results, fh, indent=1, sort_keys=True)
-            print('recorded %s (%d iterations)' % (golden_path, iterations))
+            pending.append((golden_path, results, iterations))
             continue
         with open(golden_path) as fh:
             golden = json.load(fh)
@@ -702,11 +756,19 @@ def main():
         else:
             print('ok   %s: %d/%d iterations identical' % (name, len(results), len(golden)))
 
+    if record:
+        for golden_path, results, iterations in pending:
+            with open(golden_path, 'w') as fh:
+                json.dump(results, fh, indent=1, sort_keys=True)
+            print('recorded %s (%d iterations)' % (golden_path, iterations))
+        print('recorded %d goldens' % len(pending))
+
     if not record:
         for label, check in (('subset invariants', check_subset_invariants),
                              ('plan accounting', check_plan_accounting),
                              ('depends model', check_depends_model),
                              ('default iterations', check_default_iterations),
+                             ('waypoints earn no capture ap', check_waypoints_earn_no_capture_ap),
                              ('minap rejection', check_minap_rejection),
                              ('blocker guard', check_blocker_guard),
                              ('blockers before links', check_no_links_before_blockers),

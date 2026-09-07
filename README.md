@@ -411,6 +411,13 @@ That costs a little efficiency, around 2% AP per minute on the example portal
 list, because links cannot be interleaved into the capture route until the last
 blocker is gone. Plans without blockers are unaffected.
 
+Blockers count for **no AP** in the estimate. Knocking one down does pay --
+resonators, and any links and fields that break with it -- but how much depends
+on how many resonators it has left and how many links run to it, and the portal
+list records neither (links survive on three resonators out of eight). So the
+plan leaves it out and you collect it as a bonus. Start and end waypoints earn
+nothing either: you stand at them, you do not capture them.
+
 ## Prioritizing MU capture (-u)
 
 By default, fieldplan will try to maximize AP per minute of gameplay, but 

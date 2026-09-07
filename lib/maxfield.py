@@ -27,7 +27,10 @@ np.seterr(divide='ignore', invalid='ignore')
 
 TRIES_PER_TRI = 10
 
-CAPTUREAP = 500+(125*8)+250+(125*2)
+# Capture bonus, eight resonators, the bonus for the eighth, and two mods.
+# Niantic raised the capture bonus from 500 to 675 (Ingress wiki, "Access
+# Points", checked 2026-09-07); the link and field values are unchanged.
+CAPTUREAP = 675+(125*8)+250+(125*2)
 LINKAP = 313
 FIELDAP = 1250
 
@@ -185,10 +188,11 @@ def gen_distance_matrix(gmapskey=None):
         time_matrix.append(matrow_dur)
 
 
-# Lookup tables for the current active_graph: (graph, dist, time, blocker, keys)
+# Lookup tables for the current active_graph:
+# (graph, dist, time, blocker, keys, capturable count)
 # dist/time are n x n lists indexed by active-graph node id, so the hot
 # loops in get_workplan_stats never go through the 'pos' indirection.
-_active_tables = (None, None, None, None, None)
+_active_tables = (None, None, None, None, None, 0)
 
 
 def get_active_tables():
@@ -201,7 +205,7 @@ def get_active_tables():
         tim = [[int(time_matrix[pos[i]][pos[j]]) for j in range(n)] for i in range(n)]
         blocker = [a.nodes[i].get('special') == '_w_blocker' for i in range(n)]
         keys = [a.nodes[i].get('keys', 0) for i in range(n)]
-        _active_tables = (a, dist, tim, blocker, keys)
+        _active_tables = (a, dist, tim, blocker, keys, count_capturable(a))
     return _active_tables[1:]
 
 
@@ -399,7 +403,7 @@ def make_workplan(a, is_subset=False):
 
     if cachekey not in capture_cache:
         logger.debug('Capture cache miss, starting ortools calculation')
-        dist, _, _, _ = get_active_tables()
+        dist, _, _, _, _ = get_active_tables()
         search_ms = capture_search_ms
         if is_subset:
             search_ms = min(search_ms, SUBSET_SEARCH_MS_PER_NODE * a.order())
@@ -512,7 +516,7 @@ def precompute_capture_routes(ncpus):
     global active_graph
     a = combined_graph
     active_graph = a
-    dist, _, _, _ = get_active_tables()
+    dist, _, _, _, _ = get_active_tables()
     blockers = get_blockers(a)
 
     w_start = None
@@ -628,10 +632,10 @@ def get_needed_keys(workplan, keys_t=None):
 
 def get_workplan_stats(workplan):
     workplan = remove_useless_captures(workplan)
-    dist_t, time_t, blocker, keys_t = get_active_tables()
+    dist_t, time_t, blocker, keys_t, ncapture = get_active_tables()
     needkeys_at, lastvisit_at = get_needed_keys(workplan, keys_t)
 
-    totalap = active_graph.order() * CAPTUREAP
+    totalap = ncapture * CAPTUREAP
     totaldist = 0
     totaltime = 0
     totalarea = 0
@@ -793,6 +797,21 @@ def triangle_edges(a, t):
             x, y = y, x
         out.append((x, y))
     return out
+
+
+def count_capturable(a):
+    """
+    How many nodes of a graph are portals the plan actually captures.
+
+    Waypoints are not: a start or end waypoint is somewhere to stand, which
+    may not even be a portal, and a blocker is an enemy portal you knock
+    down rather than take. There is AP in destroying one, but how much
+    depends on how many resonators it has left and how many links run to
+    it, and the portal list says neither -- links survive with three
+    resonators out of eight. So it counts for nothing here and whatever it
+    pays on the day is a bonus.
+    """
+    return sum(1 for i in range(a.order()) if a.nodes[i].get('special') is None)
 
 
 def get_blockers(a):
