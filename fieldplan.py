@@ -304,6 +304,10 @@ def main():
 
     maxfield.gen_distance_matrix(args.gmapskey)
 
+    if not args.maxtime:
+        # Subset runs key their routes on the subset, so only full runs benefit
+        maxfield.precompute_capture_routes(args.maxcpus)
+
     if args.maxtime or args.nocache:
         bestgraph = None
         bestplan = None

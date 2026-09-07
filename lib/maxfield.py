@@ -322,44 +322,12 @@ def make_workplan(a, is_subset=False):
 
     if cachekey not in capture_cache:
         logger.debug('Capture cache miss, starting ortools calculation')
-
-        manager = pywrapcp.RoutingIndexManager(a.order(), 1, [w_start], [linkplan[0][0]])
-        routing = pywrapcp.RoutingModel(manager)
-
-        # Hand the solver the whole matrix up front; a Python callback would
-        # be invoked tens of thousands of times per solve.
         dist, _, _ = get_active_tables()
-        transit_callback_index = routing.RegisterTransitMatrix(dist)
-        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
-
-        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC
-        )
-        if capture_search_ms > 0:
-            # Improve on the greedy first solution. Routes are cached per
-            # (start, first link) so this runs at most once per key.
-            search_parameters.local_search_metaheuristic = (
-                routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-            )
-            search_parameters.time_limit.FromMilliseconds(capture_search_ms)
-        logger.debug('Starting solver')
-        assignment = routing.SolveWithParameters(search_parameters)
-        logger.debug('Ended solver')
-
-        if not assignment:
-            logger.debug('Could not solve for these constraints, ignoring plan')
-            capture_cache[cachekey] = None
-            return None, None
-
-        index = routing.Start(0)
-        dist_ordered = list()
-        while not routing.IsEnd(index):
-            node = manager.IndexToNode(index)
-            dist_ordered.append(node)
-            index = assignment.Value(routing.NextVar(index))
-
+        dist_ordered = solve_capture_route(dist, w_start, linkplan[0][0], capture_search_ms)
         capture_cache[cachekey] = dist_ordered
+        if dist_ordered is None:
+            logger.debug('Could not solve for these constraints, ignoring plan')
+            return None, None
     else:
         logger.debug('Capture cache hit')
         if capture_cache[cachekey] is None:
@@ -382,6 +350,91 @@ def make_workplan(a, is_subset=False):
     workplan, stats = improve_workplan(workplan)
 
     return workplan, stats
+
+
+def solve_capture_route(dist, w_start, w_end, search_ms):
+    """
+    Order in which to visit every node of an n x n distance matrix, starting
+    at w_start and finishing at w_end. Returns None if unsolvable. Pure
+    function of its arguments so it can run in a worker pool.
+    """
+    manager = pywrapcp.RoutingIndexManager(len(dist), 1, [w_start], [w_end])
+    routing = pywrapcp.RoutingModel(manager)
+
+    # Hand the solver the whole matrix up front; a Python callback would
+    # be invoked tens of thousands of times per solve.
+    transit_callback_index = routing.RegisterTransitMatrix(dist)
+    routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+
+    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+    search_parameters.first_solution_strategy = (
+        routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC
+    )
+    if search_ms > 0:
+        # Improve on the greedy first solution
+        search_parameters.local_search_metaheuristic = (
+            routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+        )
+        search_parameters.time_limit.FromMilliseconds(search_ms)
+    logger.debug('Starting solver')
+    assignment = routing.SolveWithParameters(search_parameters)
+    logger.debug('Ended solver')
+
+    if not assignment:
+        return None
+
+    index = routing.Start(0)
+    dist_ordered = list()
+    while not routing.IsEnd(index):
+        node = manager.IndexToNode(index)
+        dist_ordered.append(node)
+        index = assignment.Value(routing.NextVar(index))
+
+    return dist_ordered
+
+
+def _solve_capture_key(job):
+    cachekey, dist, w_start, w_end, search_ms = job
+    return cachekey, solve_capture_route(dist, w_start, w_end, search_ms)
+
+
+def precompute_capture_routes(ncpus):
+    """
+    Solve every capture route a full-graph run can ask for, in parallel,
+    before the workers start. Routes depend only on where the linking
+    starts (the start waypoint, or failing that the portal furthest from
+    the first link), so there are at most one per portal, and every worker
+    would otherwise solve the same ones independently.
+    """
+    global active_graph
+    a = combined_graph
+    active_graph = a
+    dist, _, _ = get_active_tables()
+
+    w_start = None
+    for i in range(a.order()):
+        if a.nodes[i]['special'] == '_w_start':
+            w_start = i
+
+    jobs = list()
+    for first in range(portal_graph.order()):
+        if w_start is None:
+            # Same rule as make_workplan: furthest node from the first link
+            start = max(range(a.order()), key=lambda p: (get_portal_distance(first, p), -p))
+        else:
+            start = w_start
+        cachekey = (start, first)
+        if cachekey not in capture_cache:
+            jobs.append((cachekey, dist, start, first, capture_search_ms))
+
+    if not jobs:
+        return
+    logger.info('Precomputing %s capture routes using %s processes', len(jobs), ncpus)
+    import multiprocessing
+    with multiprocessing.Pool(min(ncpus, len(jobs))) as pool:
+        for cachekey, route in pool.imap_unordered(_solve_capture_key, jobs):
+            capture_cache[cachekey] = route
+    active_graph = None
 
 
 def get_portals_perimeter(p1, p2, p3, direct=False):
