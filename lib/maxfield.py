@@ -61,6 +61,19 @@ capture_search_ms = 200
 # budget by size: measured gains saturate at roughly this many ms per node.
 SUBSET_SEARCH_MS_PER_NODE = 3
 
+# Default iteration count when -i is not given. An iteration costs roughly
+# ITERATION_MS_AT_10 * (n/10)**ITERATION_MS_EXP milliseconds on one core;
+# that curve was fitted to measured runs at n = 10, 15, 20, 30 and 40 and is
+# within 2.2% across the range. Spending a fixed slice of single-core work
+# gives small portal lists the extra restarts they can afford almost for
+# free, while the floor keeps quality for the large ones, where an iteration
+# is expensive but few of them are affordable anyway.
+ITERATION_MS_AT_10 = 3.5
+ITERATION_MS_EXP = 2.75
+ITERATION_BUDGET_MS = 100000
+ITERATIONS_MIN = 5000
+ITERATIONS_MAX = 20000
+
 capture_cache = dict()
 dist_matrix = list()
 time_matrix = list()
@@ -206,6 +219,35 @@ def get_portal_time(p1, p2):
         p1 = active_graph.nodes[p1]['pos']
         p2 = active_graph.nodes[p2]['pos']
     return int(time_matrix[p1][p2])
+
+
+def estimate_iteration_ms(n):
+    # Single-core cost of one solver iteration at n portals
+    if n < 3:
+        return ITERATION_MS_AT_10
+    return ITERATION_MS_AT_10 * (n / 10.0) ** ITERATION_MS_EXP
+
+
+def default_iterations(n):
+    """
+    How many random restarts to run when the user did not say.
+
+    Iterations needed to converge fall as the list grows, because each
+    iteration does more work inside improve_workplan. Measured iteration of
+    the last improvement: 14,339 at n=10, 8,720 at n=15, 5,684 at n=20,
+    3,085 at n=30, 2,132 at n=40. At 5,000 iterations a run lands within
+    about 1-2% of a very long run (99.1% at n=10, 98.8% at n=15, 97.7% at
+    n=20, 100% at n=30 and n=40), so 5,000 is the floor.
+
+    Small lists are cheap enough to search much harder, so the budget gives
+    them more, up to a cap that keeps any run bounded. The result tracks the
+    measured need: 20,000 at n=10, 9,500 at n=15, and the floor from n=20 up.
+    """
+    if n < 3:
+        return ITERATIONS_MIN
+    raw = ITERATION_BUDGET_MS / estimate_iteration_ms(n)
+    raw = int(round(raw / 500.0) * 500)
+    return max(ITERATIONS_MIN, min(ITERATIONS_MAX, raw))
 
 
 def dedupe_portals(portals):

@@ -201,19 +201,37 @@ to find all the knobs and levers you can tweak. Here are a few pointers:
 
 ## How many iterations to use?
 
-The default is 5,000 random iterations to find the best fielding plan. The
+Since 2026-09-07 you do not have to choose: leaving `-i` off scales the
+iteration count to the size of your portal list, and the run prints what it
+picked. The rest of this section is for when you want to override it.
+
+The floor is 5,000 random iterations, and small lists get more (up to 20,000)
+because iterations are cheap when there are few portals. The
 bisecting and fielding is done randomly, largely because finding efficient
 movement plans for a set of geographical coordinates is one of those "NP hard"
 problems (look up the "Travelling Salesman Problem"). There is an optimization
 step after each random plan to fix the worst inefficiencies, so the results
-after each iteration are already tweaked. In my personal experience using it,
-I've found 10,000 a good number of iterations to generate decent plans.
+after each iteration are already tweaked.
 
-Generally:
+Measured over 30 burn-in runs on random portal lists (2026-09-07), as a
+percentage of the best a very long run finds:
 
-- 500 iterations: not very good plans
-- 5,000 iterations: good plans
-- 10,000 iterations: very good plans
+| iterations | 10 portals | 15 | 20 | 30 | 40 |
+|---|---|---|---|---|---|
+| 500 | 97% | 90% | 88% | 94% | 96% |
+| 1,000 | 97% | 91% | 90% | 98% | 100% |
+| 5,000 | 99% | 99% | 98% | 100% | 100% |
+
+The perhaps surprising part is that **bigger lists need fewer iterations**,
+not more. Each iteration does more optimizing work when there are more
+portals, so the search settles sooner: the last improvement arrived at
+iteration 14,339 for 10 portals but only 2,132 for 40. What grows with the
+list is the cost of a single iteration, which is why the automatic default
+gives small lists many more of them and large lists the 5,000 floor.
+
+So there is little point pushing a 30- or 40-portal list past 5,000, while a
+10-portal list genuinely keeps improving out to 15,000 or so -- and can
+afford to, since those iterations are around 45x cheaper.
 
 Since iterations are largely random, it's entirely possible to find the best
 possible plan on your first run, and to only find terrible plans even after

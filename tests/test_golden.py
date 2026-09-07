@@ -323,6 +323,69 @@ def check_depends_model():
     return fails
 
 
+# Single-core ms per solver iteration, measured 2026-09-07 over 30 burn-in
+# runs (3 random layouts x 2 seeds x 1000 iterations at each size). The cost
+# model in lib/maxfield.py is fitted to these; if it drifts away from them the
+# scaled -i default stops meaning anything.
+MEASURED_ITERATION_MS = {10: 3.5, 15: 10.5, 20: 23.1, 30: 70.0, 40: 157.7}
+
+
+def check_default_iterations():
+    """The -i default scales with portal count, off a fitted cost model."""
+    fails = []
+
+    for n, want in sorted(MEASURED_ITERATION_MS.items()):
+        got = maxfield.estimate_iteration_ms(n)
+        err = abs(got / want - 1.0)
+        if err > 0.10:
+            fails.append('cost model says %.1f ms at n=%d, measured %.1f (%.0f%% off)'
+                         % (got, n, want, 100 * err))
+
+    prev = 0
+    for n in range(3, 120):
+        ms = maxfield.estimate_iteration_ms(n)
+        if ms < prev:
+            fails.append('cost model is not monotonic at n=%d' % n)
+            break
+        prev = ms
+
+    for n in range(0, 300):
+        it = maxfield.default_iterations(n)
+        if not maxfield.ITERATIONS_MIN <= it <= maxfield.ITERATIONS_MAX:
+            fails.append('default_iterations(%d) is %d, outside [%d, %d]'
+                         % (n, it, maxfield.ITERATIONS_MIN, maxfield.ITERATIONS_MAX))
+            break
+        if it % 500:
+            fails.append('default_iterations(%d) is %d, not a round number' % (n, it))
+            break
+
+    # Cheap lists get searched harder, expensive ones sit on the floor
+    if maxfield.default_iterations(8) != maxfield.ITERATIONS_MAX:
+        fails.append('a small list should get the maximum, got %d' % maxfield.default_iterations(8))
+    if maxfield.default_iterations(40) != maxfield.ITERATIONS_MIN:
+        fails.append('a large list should get the floor, got %d' % maxfield.default_iterations(40))
+    if maxfield.default_iterations(10) <= maxfield.default_iterations(30):
+        fails.append('10 portals should get more iterations than 30')
+
+    # Never increasing as the list grows, and degenerate input is safe
+    prev = maxfield.ITERATIONS_MAX + 1
+    for n in range(3, 300):
+        it = maxfield.default_iterations(n)
+        if it > prev:
+            fails.append('default_iterations rose from %d to %d at n=%d' % (prev, it, n))
+            break
+        prev = it
+    for n in (0, 1, 2):
+        if maxfield.default_iterations(n) != maxfield.ITERATIONS_MIN:
+            fails.append('default_iterations(%d) should fall back to the floor' % n)
+
+    # The floor has to stay where the convergence data put it: 5,000 landed
+    # within ~1-2% of a very long run at n=10, 15 and 20
+    if maxfield.ITERATIONS_MIN < 5000:
+        fails.append('the floor dropped below the measured 5000')
+    return fails
+
+
 def check_module_defaults():
     """A library caller who configures nothing must still get the whole algorithm.
 
@@ -410,6 +473,7 @@ def main():
         for label, check in (('subset invariants', check_subset_invariants),
                              ('plan accounting', check_plan_accounting),
                              ('depends model', check_depends_model),
+                             ('default iterations', check_default_iterations),
                              ('module defaults', check_module_defaults)):
             fails = check()
             for msg in fails:

@@ -174,9 +174,12 @@ def main():
 
     parser = argparse.ArgumentParser(description=description, prog='fieldplan.py',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-i', '--iterations', type=int, default=5000,
+    # SUPPRESS rather than None so the help does not advertise "(default: None)";
+    # the real default depends on the portal count and is filled in below
+    parser.add_argument('-i', '--iterations', type=int, default=argparse.SUPPRESS,
                         help='Number of iterations to perform. More iterations may improve '
-                        'results, but will take longer to process.')
+                        'results, but will take longer to process. Default: scaled to the '
+                        'number of portals, 5000 for larger lists and more for small ones.')
     parser.add_argument('-m', '--travelmode', default='walking',
                         help='Travel mode (walking, bicycling, driving, transit).')
     
@@ -238,7 +241,7 @@ def main():
     if args.maxkeys:
         parser.error('Option -k is obsolete. Use --cooling instead.')
 
-    if args.iterations < 0:
+    if getattr(args, 'iterations', None) is not None and args.iterations < 0:
         parser.error('Number of extra samples should be positive')
 
     if args.capture_search_ms < 0:
@@ -286,6 +289,11 @@ def main():
     portals = maxfield.dedupe_portals(portals)
 
     logger.info('Considering %d portals and %s waypoints', len(portals), len(waypoints))
+
+    if getattr(args, 'iterations', None) is None:
+        args.iterations = maxfield.default_iterations(len(portals))
+        logger.info('Using %d iterations for %d portals (override with -i)',
+                    args.iterations, len(portals))
 
     # Stick some things into maxfield so we don't
     # continuously pass them around as function args
