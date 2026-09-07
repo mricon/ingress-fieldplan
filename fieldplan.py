@@ -11,6 +11,8 @@ import multiprocessing as mp
 import time
 import queue
 
+import numpy as np
+
 logger = logging.getLogger('fieldplan')
 
 # version number
@@ -52,6 +54,11 @@ def queue_job(args, best, counter, ready_queue):
     nogood_max = int(args.iterations/100)
     best_max = int(args.iterations/10)
     pop_maxfield_data(args)
+
+    # Forked workers inherit the parent's numpy RNG state. It only happens to
+    # differ between workers today because numpy seeds lazily and the parent
+    # never draws before forking; make it deliberate.
+    np.random.seed()
 
     if args.maxtime:
         is_subset = True
@@ -146,7 +153,12 @@ def queue_job(args, best, counter, ready_queue):
             nogood += 1
             continue
 
+        # Compare-and-set under the lock: another worker may have posted a
+        # better plan since we peeked at best.value above.
         with best.get_lock():
+            if mybest <= best.value:
+                nogood += 1
+                continue
             best.value = mybest
 
         ready_queue.put((success, b, workplan, stats))
@@ -379,6 +391,15 @@ def main():
                 failcount += 1
                 continue
 
+            if args.maxmu:
+                newbest = stats['sqmpmin']
+            else:
+                newbest = stats['appmin']
+            if beststats is not None and newbest <= best:
+                # Two workers raced to post; keep the better one
+                logger.debug('Ignoring plan with %s %s, already have %s', newbest, beststr, best)
+                continue
+
             if not args.quiet:
                 if bestkm is not None:
                     sys.stdout.write('\r(      %s km, %s km2, %s portals, %s AP, %s %s, %s)              \n' % (
@@ -387,11 +408,7 @@ def main():
             beststats = stats
             bestgraph = b
             bestplan = workplan
-
-            if args.maxmu:
-                best = stats['sqmpmin']
-            else:
-                best = stats['appmin']
+            best = newbest
 
             failcount = 0
 
