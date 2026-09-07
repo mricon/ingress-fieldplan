@@ -261,6 +261,68 @@ def check_plan_accounting():
     return fails
 
 
+def check_depends_model():
+    """The dependency relation, and that the optimizer respects it."""
+    fails = []
+    reset_state()
+    portals, waypoints = text_interface.get_portals_from_file(os.path.join(HERE, 'fixtures', 'waypoints.txt'))
+    maxfield.populate_graphs(portals, waypoints)
+    maxfield.gen_distance_matrix(None)
+    np.random.seed(SEED)
+
+    checked = 0
+    for _ in range(12):
+        b = maxfield.portal_graph.copy()
+        workplan, stats = solve_iteration(b, False)
+        if workplan is None:
+            continue
+        checked += 1
+        depends = maxfield.get_link_depends(b)
+
+        if not maxfield.workplan_is_valid(workplan, depends):
+            fails.append('improve_workplan produced a plan that is not playable')
+            break
+
+        # Every field must have its two other edges recorded as dependencies
+        for e in b.edges():
+            for t in b.edges[e]['fields']:
+                others = {frozenset(x) for x in maxfield.triangle_edges(b, t)} - {frozenset(e)}
+                if not others <= depends[frozenset(e)]:
+                    fails.append('field %s on edge %s is missing dependencies' % (t, e))
+                    break
+
+        # The relation must actually bite: a plan with the last two links
+        # swapped should usually be rejected, and reversing every link in
+        # place must never break it (dependencies are undirected)
+        flipped = [(q, p, f) if q is not None else (p, q, f) for p, q, f in workplan]
+        for p, q, f in flipped:
+            if q is not None and frozenset((p, q)) not in depends:
+                fails.append('flipping the plan lost edge %s from the relation' % ((p, q),))
+                break
+        if fails:
+            break
+
+    if not checked:
+        fails.append('no plans were produced to check')
+        return fails
+
+    # A hand-built plan that breaks a dependency must be rejected
+    depends = {frozenset((0, 1)): set(), frozenset((1, 2)): set(),
+               frozenset((0, 2)): {frozenset((0, 1)), frozenset((1, 2))}}
+    good = [(0, None, 0), (1, None, 0), (2, None, 0), (0, 1, 0), (1, 2, 0), (0, 2, 1)]
+    bad = [(0, None, 0), (1, None, 0), (2, None, 0), (0, 1, 0), (0, 2, 1), (1, 2, 0)]
+    uncaptured = [(0, None, 0), (0, 1, 0)]
+    toomany = [(0, None, 0)] + [(1, None, 0)] + [(0, 1, 0)] * 9
+    for label, plan, want in (('a valid plan', good, True),
+                              ('a field completed too early', bad, False),
+                              ('a link to an uncaptured portal', uncaptured, False),
+                              ('more than 8 outbound links', toomany, False)):
+        got = maxfield.workplan_is_valid(plan, depends)
+        if got != want:
+            fails.append('workplan_is_valid said %s for %s' % (got, label))
+    return fails
+
+
 def check_module_defaults():
     """A library caller who configures nothing must still get the whole algorithm.
 
@@ -347,6 +409,7 @@ def main():
     if not record:
         for label, check in (('subset invariants', check_subset_invariants),
                              ('plan accounting', check_plan_accounting),
+                             ('depends model', check_depends_model),
                              ('module defaults', check_module_defaults)):
             fails = check()
             for msg in fails:

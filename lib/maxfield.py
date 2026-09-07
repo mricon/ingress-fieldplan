@@ -711,10 +711,79 @@ def workplan_is_better(orig_stats, new_stats):
     return False
 
 
+def triangle_edges(a, t):
+    # The three edges of a field, in whichever direction they were built
+    out = []
+    for i in range(3):
+        x, y = t[i-1], t[i-2]
+        if not a.has_edge(x, y):
+            x, y = y, x
+        out.append((x, y))
+    return out
+
+
+def get_link_depends(a):
+    """
+    edge -> set of edges that have to be made before it.
+
+    markEdgesWithFields() records a field on whichever of its three edges
+    came last, so that edge is the one that completes it and the other two
+    have to precede it. That is the whole dependency relation, and it is
+    what makes a link movable or not. The old code approximated it with the
+    field count on the link ("2 fields means frozen, 1 means reversible in
+    place only"), which refuses plenty of reorderings that are legal.
+
+    Enforcing it also keeps the bookkeeping honest, since the edge carrying
+    a field stays the last of its three.
+
+    Edges are keyed as frozensets: whether a field can be completed depends
+    on its three links existing, not on which way round each was thrown, so
+    reversing a link leaves the relation untouched.
+    """
+    depends = dict()
+    for p, q in a.edges():
+        deps = set()
+        for t in a.edges[p, q]['fields']:
+            for e in triangle_edges(a, t):
+                key = frozenset(e)
+                if key != frozenset((p, q)):
+                    deps.add(key)
+        depends[frozenset((p, q))] = deps
+    return depends
+
+
+def workplan_is_valid(workplan, depends, maxlinks=8):
+    """
+    A plan is playable when every link is thrown from the portal we are
+    standing at, to a portal we have already captured, after the other two
+    edges of any field it completes, and without exceeding the outbound
+    link limit.
+    """
+    seen = set()
+    made = set()
+    outdeg = dict()
+    for p, q, f in workplan:
+        seen.add(p)
+        if q is None:
+            continue
+        if q not in seen:
+            return False
+        key = frozenset((p, q))
+        for d in depends.get(key, ()):
+            if d not in made:
+                return False
+        outdeg[p] = outdeg.get(p, 0) + 1
+        if outdeg[p] > maxlinks:
+            return False
+        made.add(key)
+    return True
+
+
 def improve_workplan(workplan):
     a = active_graph
     a.orig_workplan = list(workplan)
     a.fixes = list()
+    depends = get_link_depends(a)
     rcount = 0
     current_stats = get_workplan_stats(workplan)
     fielders_moved = False
@@ -737,10 +806,6 @@ def improve_workplan(workplan):
             # of fields is fewer than 2
             for j in range(i+1, m):
                 jp, jq, jf = workplan[j]
-                # We don't touch links that create 2 fields,
-                # because we cannot move or reverse them.
-                if jf > 1:
-                    continue
                 if jp != p and jq != p:
                     continue
                 if jp not in visited_origins or jq not in visited_origins:
@@ -751,64 +816,66 @@ def improve_workplan(workplan):
                     continue
 
                 logger.debug('Improvement candidate: %s', workplan[j])
-                # Move non-fielding edges to happen at capture stage, if that's better
-                if jf == 0:
-                    if p == jp:
-                        # See if moving this edge will be better
-                        nwp = list(workplan)
-                        del(nwp[j])
-                        if q is None:
-                            del(nwp[i])
-                            newpos = i
-                        else:
-                            newpos = i+1
-                        nwp.insert(newpos, (jp, jq, jf))
-                        new_stats = get_workplan_stats(nwp)
-                        if workplan_is_better(current_stats, new_stats):
-                            # Replace current capture with this edge
-                            a.fixes.append('R%s: Moved %s to %s' % (rcount, workplan[j], newpos))
-                            logger.debug(a.fixes[-1])
-                            workplan = nwp
-                            current_stats = new_stats
-                            improved = reordered = True
-                            break
-                    if p == jq and a.out_degree(jq) < 8:
-                        # Reverse and move this edge to see if it's better
-                        nwp = list(workplan)
-                        del(nwp[j])
-                        if q is None:
-                            del(nwp[i])
-                            newpos = i
-                        else:
-                            newpos = i+1
-                        nwp.insert(newpos, (jq, jp, jf))
-                        new_stats = get_workplan_stats(nwp)
-                        if workplan_is_better(current_stats, new_stats):
-                            a.fixes.append('R%s: Reversed and moved %s to %s' % (rcount, workplan[j], newpos))
-                            logger.debug(a.fixes[-1])
-                            workplan = nwp
-                            current_stats = new_stats
-                            reverse_edge(jp, jq)
-                            improved = reordered = True
-                            break
+                # Any link may move, in either direction, as long as the plan
+                # stays playable. workplan_is_valid() is what decides that
+                # now; the field count on the link no longer gates it.
+                nwp = list(workplan)
+                del(nwp[j])
+                if q is None:
+                    del(nwp[i])
+                    newpos = i
+                else:
+                    newpos = i+1
+
+                for reversed_move in (False, True):
+                    if not reversed_move:
+                        if p != jp:
+                            continue
+                        moved = (jp, jq, jf)
+                    else:
+                        if p != jq or a.out_degree(jq) >= 8:
+                            continue
+                        moved = (jq, jp, jf)
+
+                    cwp = list(nwp)
+                    cwp.insert(newpos, moved)
+                    if not workplan_is_valid(cwp, depends):
+                        continue
+                    new_stats = get_workplan_stats(cwp)
+                    if not workplan_is_better(current_stats, new_stats):
+                        continue
+                    if reversed_move:
+                        a.fixes.append('R%s: Reversed and moved %s to %s' % (rcount, workplan[j], newpos))
+                        reverse_edge(jp, jq)
+                    else:
+                        a.fixes.append('R%s: Moved %s to %s' % (rcount, workplan[j], newpos))
+                    logger.debug(a.fixes[-1])
+                    workplan = cwp
+                    current_stats = new_stats
+                    improved = reordered = True
+                    break
+
+                if reordered:
+                    break
 
             if reordered:
                 break
 
-            # This action creates one field, so we can't move it in the workplan
-            elif f == 1 and a.out_degree(q) < 8:
-                # Try reversing this link in place to see if we get a better plan
+            # Reversing in place needs no relocation, so it is worth trying
+            # for any link, not just the ones completing a single field
+            elif q is not None and a.out_degree(q) < 8:
                 nwp = list(workplan)
                 nwp[i] = (q, p, f)
-                new_stats = get_workplan_stats(nwp)
-                if workplan_is_better(current_stats, new_stats):
-                    a.fixes.append('R%s: In-place reversed %s at %s' % (rcount, workplan[i], i))
-                    logger.debug(a.fixes[-1])
-                    reverse_edge(p, q)
-                    workplan = nwp
-                    current_stats = new_stats
-                    fielders_moved = True
-                    improved = True
+                if workplan_is_valid(nwp, depends):
+                    new_stats = get_workplan_stats(nwp)
+                    if workplan_is_better(current_stats, new_stats):
+                        a.fixes.append('R%s: In-place reversed %s at %s' % (rcount, workplan[i], i))
+                        logger.debug(a.fixes[-1])
+                        reverse_edge(p, q)
+                        workplan = nwp
+                        current_stats = new_stats
+                        fielders_moved = True
+                        improved = True
 
         if reordered:
             logger.debug('Plan was reordered, restart the loop')
