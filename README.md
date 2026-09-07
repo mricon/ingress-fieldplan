@@ -408,3 +408,14 @@ to help you out.
 Happy fielding!
 
 ENL agent: mricon
+
+## Hacking on the solver
+
+`tests/test_golden.py` runs a fixed number of seeded solver iterations
+against the portal lists in `tests/fixtures/` and compares every resulting
+workplan and its stats against the recorded JSON in `tests/golden/`:
+
+    uv run python tests/test_golden.py
+
+Any change to the algorithm that alters results will fail it. If the change
+is intentional, review the difference and re-record with `--record`.

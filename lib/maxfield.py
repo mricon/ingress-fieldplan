@@ -164,6 +164,26 @@ def gen_distance_matrix(gmapskey=None):
         time_matrix.append(matrow_dur)
 
 
+# Lookup tables for the current active_graph: (graph, dist, time, blocker)
+# dist/time are n x n lists indexed by active-graph node id, so the hot
+# loops in get_workplan_stats never go through the 'pos' indirection.
+_active_tables = (None, None, None, None)
+
+
+def get_active_tables():
+    global _active_tables
+    a = active_graph
+    if _active_tables[0] is not a:
+        n = a.order()
+        pos = [a.nodes[i]['pos'] for i in range(n)]
+        dist = [[dist_matrix[pos[i]][pos[j]] for j in range(n)] for i in range(n)]
+        tim = [[int(time_matrix[pos[i]][pos[j]]) for j in range(n)] for i in range(n)]
+        blocker = [('special' in combined_graph.nodes[i]
+                    and combined_graph.nodes[i]['special'] == '_w_blocker') for i in range(n)]
+        _active_tables = (a, dist, tim, blocker)
+    return _active_tables[1:]
+
+
 def get_portal_distance(p1, p2, direct=False):
     if active_graph is not None:
         p1 = active_graph.nodes[p1]['pos']
@@ -305,12 +325,10 @@ def make_workplan(a, is_subset=False):
         manager = pywrapcp.RoutingIndexManager(a.order(), 1, [w_start], [linkplan[0][0]])
         routing = pywrapcp.RoutingModel(manager)
 
-        def distance_callback(from_index, to_index):
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return get_portal_distance(from_node, to_node)
-
-        transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+        # Hand the solver the whole matrix up front; a Python callback would
+        # be invoked tens of thousands of times per solve.
+        dist, _, _ = get_active_tables()
+        transit_callback_index = routing.RegisterTransitMatrix(dist)
         routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
@@ -389,8 +407,46 @@ def reverse_edge(p, q):
     active_graph.remove_edge(p, q)
 
 
+def get_needed_keys(workplan):
+    """
+    For every index where the agent arrives at a portal (first entry of a
+    run of consecutive actions at the same portal), work out how many keys
+    for that portal are needed before we come back to it, and whether this
+    is the last visit.
+
+    needkeys: keys for all future links to p if this is the last visit,
+              otherwise only the links to p made before the next visit.
+    Computed in a single backward pass instead of a lookahead per visit.
+    """
+    n = len(workplan)
+    links_to = dict()     # portal -> links to it at indices > current
+    at_next_visit = dict()  # portal -> links_to at the start of its next visit
+    pending = dict()
+    needkeys = [0] * n
+    lastvisit = [True] * n
+    for idx in range(n - 1, -1, -1):
+        p, q, f = workplan[idx]
+        if idx == n - 1 or workplan[idx + 1][0] != p:
+            # last action of a visit: links_to counts everything after it
+            total = links_to.get(p, 0)
+            if p in at_next_visit:
+                pending[p] = (total - at_next_visit[p], False)
+            else:
+                pending[p] = (total, True)
+        if idx == 0 or workplan[idx - 1][0] != p:
+            # first action of a visit
+            needkeys[idx], lastvisit[idx] = pending[p]
+            at_next_visit[p] = links_to.get(p, 0)
+        if q is not None:
+            links_to[q] = links_to.get(q, 0) + 1
+    return needkeys, lastvisit
+
+
 def get_workplan_stats(workplan):
     workplan = remove_useless_captures(workplan)
+    dist_t, time_t, blocker = get_active_tables()
+    needkeys_at, lastvisit_at = get_needed_keys(workplan)
+
     totalap = active_graph.order() * CAPTUREAP
     totaldist = 0
     totaltime = 0
@@ -409,13 +465,9 @@ def get_workplan_stats(workplan):
         need_area = True
 
     prev_p = None
-    plan_at = 0
-    seen_p = list()
+    seen_p = set()
     time_at_portal = 0
-    for p, q, f in workplan:
-        mp = combined_graph.nodes[p]['pos']
-        plan_at += 1
-
+    for idx, (p, q, f) in enumerate(workplan):
         # Are we at a different location than the previous portal?
         if p != prev_p:
             # Append previous portal's time_at_portal to total time
@@ -432,50 +484,26 @@ def get_workplan_stats(workplan):
                 # Add half a minute for capturing, unless idkfa
                 if cooling != 'idkfa':
                     time_at_portal += 0.5
-                seen_p.append(p)
-
-            # How many keys do we need if/until we come back?
-            ensurekeys = 0
-            totalkeys = 0
-            # Track when we leave this portal
-            lastvisit = True
-            same_p = True
-            for fp, fq, ff in workplan[plan_at:]:
-                if fp == p:
-                    # Are we still at the same portal?
-                    if same_p:
-                        continue
-                    if lastvisit:
-                        lastvisit = False
-                        ensurekeys = totalkeys
-                else:
-                    # we're at a different portal
-                    same_p = False
-                if fq == p:
-                    # Future link to this portal
-                    totalkeys += 1
+                seen_p.add(p)
 
             if prev_p is not None:
-                duration = get_portal_time(prev_p, p)
+                duration = time_t[prev_p][p]
                 totaltime += duration
                 traveltime += duration
-                dist = get_portal_distance(prev_p, p)
+                dist = dist_t[prev_p][p]
                 if dist > 40:
                     totaldist += dist
 
             # Are we at a blocker?
-            if 'special' in combined_graph.nodes[mp] and combined_graph.nodes[mp]['special'] == '_w_blocker':
+            if blocker[p]:
                 # assume it takes 3 minutes to destroy a blocker
                 time_at_portal += 3
                 prev_p = p
                 continue
 
-            needkeys = 0
-            if totalkeys:
-                if lastvisit:
-                    needkeys = totalkeys
-                elif ensurekeys:
-                    needkeys = ensurekeys
+            # How many keys do we need if/until we come back?
+            needkeys = needkeys_at[idx]
+            lastvisit = lastvisit_at[idx]
 
             # IDKFA means you already have all the keys
             if needkeys and cooling != 'idkfa':
@@ -484,7 +512,6 @@ def get_workplan_stats(workplan):
                 # - we glyph-hack, meaning it takes about 30 seconds per actual hack action
                 # - we'll use a Heat Sink only if we'd spend more than 10 min at a portal
                 #   (override with --cool-if-longer-than)
-                use_cooling = False
                 if keysperhack != 1:
                     needed_hacks = int((needkeys/keysperhack) + (needkeys % keysperhack))
                 else:
@@ -713,27 +740,19 @@ def improve_workplan(workplan):
 
 
 def remove_useless_captures(workplan):
-    final = list()
-    pos = 0
-    for p, q, f in workplan:
-        if q is None:
-            useless = False
-            # Are we going to visit this portal again before we link to it?
-            for fp, fq, ff in workplan[pos+1:]:
-                if fp == p:
-                    # Yes, it's useless
-                    logger.debug('Removing useless capture at pos %s: %s', pos, workplan[pos])
-                    useless = True
-                    break
-                if fq == p:
-                    # Yes, we'll link to it before we come back
-                    break
-            if useless:
-                pos += 1
-                continue
-        final.append(workplan[pos])
-        pos += 1
-    return final
+    # A capture is useless if we visit that portal again before anything
+    # links to it. One backward pass tracking the next event per portal.
+    next_event = dict()
+    keep = [True] * len(workplan)
+    for idx in range(len(workplan) - 1, -1, -1):
+        p, q, f = workplan[idx]
+        if q is None and next_event.get(p) == 'visit':
+            logger.debug('Removing useless capture at pos %s: %s', idx, workplan[idx])
+            keep[idx] = False
+        next_event[p] = 'visit'
+        if q is not None:
+            next_event[q] = 'link'
+    return [w for w, k in zip(workplan, keep) if k]
 
 
 def remove_since(a, m, t):

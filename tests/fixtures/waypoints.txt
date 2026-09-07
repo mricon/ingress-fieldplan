@@ -1,0 +1,13 @@
+#!s Home Base; https://intel.ingress.com/intel?ll=45.5088,-73.5878&z=21
+Mount Royal Cross; https://intel.ingress.com/intel?pll=45.5088,-73.5878
+Chalet du Mont-Royal; https://intel.ingress.com/intel?pll=45.5041,-73.5872
+Beaver Lake Pavilion; https://intel.ingress.com/intel?pll=45.4996,-73.5951
+George-Etienne Cartier; https://intel.ingress.com/intel?pll=45.5152,-73.5836
+Percival Molson Stadium; https://intel.ingress.com/intel?pll=45.5104,-73.5799
+Redpath Museum; https://intel.ingress.com/intel?pll=45.5045,-73.5773
+Roddick Gates; https://intel.ingress.com/intel?pll=45.5043,-73.5747
+Place Ville Marie; https://intel.ingress.com/intel?pll=45.5017,-73.5695
+#!b Annoying Blocker; https://intel.ingress.com/intel?pll=45.5070,-73.5820
+Saint Joseph Oratory; https://intel.ingress.com/intel?pll=45.4923,-73.6178
+Westmount Lookout; https://intel.ingress.com/intel?pll=45.4880,-73.5980
+#!e Metro Station; https://intel.ingress.com/intel?ll=45.5019,-73.5674&z=21

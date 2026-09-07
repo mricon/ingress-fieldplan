@@ -1,8 +1,6 @@
 #!/usr/env python3
 # -*- coding: utf-8 -*-
 
-from lib import geometry
-
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 
@@ -25,17 +23,28 @@ def try_ordered_edge(a,p,q,reversible):
         if a.out_degree(q) >= 8:
             raise(Deadend('%s and %s already have 8 outgoing'%(p,q)))
         p, q = q, p
-    
-    m = a.size()
-    a.add_edge(p, q, order=m, reversible=reversible, fields=[])
 
     try:
-        a.edgeStack.append((p, q))
+        stack = a.edgeStack
     except AttributeError:
-        a.edgeStack = [ (p,q) ]
+        stack = a.edgeStack = []
+
+    # Every edge in the graph goes through here and remove_since() pops the
+    # stack in lockstep with remove_edge(), so len(stack) is the edge count.
+    # (networkx's a.size() recomputes it by summing all degrees each call.)
+    a.add_edge(p, q, order=len(stack), reversible=reversible, fields=[])
+    stack.append((p, q))
     #logger.debug('adding p=%s, q=%s', p, q)
     #logger.debug('edgeStack follows')
     #logger.debug(a.edgeStack)
+
+
+def graph_xyz(a):
+    """n x 3 array of every node's xyz, built lazily and cached on the graph."""
+    xyz = getattr(a, '_xyz', None)
+    if xyz is None or len(xyz) != a.order():
+        xyz = a._xyz = np.array([a.nodes[i]['xyz'] for i in range(a.order())])
+    return xyz
 
 
 class Triangle:
@@ -59,6 +68,16 @@ class Triangle:
             self.verts[0] = tmp
 
         self.pts = np.array([a.nodes[p]['xyz'] for p in verts])
+        # Normals of the three planes through the origin and each side.
+        # They don't depend on the point being tested, so compute them once
+        # here instead of on every containment check (see findContents).
+        A = self.pts[[1, 2, 0]]
+        B = self.pts[[2, 0, 1]]
+        self.crosses = np.stack([A[:, 1]*B[:, 2] - A[:, 2]*B[:, 1],
+                                 A[:, 2]*B[:, 0] - A[:, 0]*B[:, 2],
+                                 A[:, 0]*B[:, 1] - A[:, 1]*B[:, 0]], axis=1)
+        # Which side of each plane the opposite vertex lies on
+        self.psign = np.sum(self.crosses * self.pts, 1)
         self.children = []
         self.contents = []
         self.center = None
@@ -68,11 +87,17 @@ class Triangle:
         if candidates is None:
             candidates = range(self.a.order())
 
-        for p in candidates:
-            if p in self.verts:
-                continue
-            if geometry.sphereTriContains(self.pts, self.a.nodes[p]['xyz']):
-                self.contents.append(p)
+        verts = self.verts
+        cands = [p for p in candidates if p not in verts]
+        if not cands:
+            return
+
+        # Same test as geometry.sphereTriContains, vectorized over all
+        # candidates: a point is inside iff it is on the same side of all
+        # three planes as the opposite vertex.
+        xyz = graph_xyz(self.a)[cands]
+        inside = np.all((xyz @ self.crosses.T) * self.psign > 0, axis=1)
+        self.contents = [p for p, ok in zip(cands, inside) if ok]
 
 
     def randSplit(self):
