@@ -94,10 +94,29 @@ gameplay plus getting around.
 - One portal per line: `Name; link`
 - The link can be a full Intel URL, a bare `pll=45.5,-73.5` fragment, or just
   `45.5,-73.5` coordinates
-- Anything after a second `;` is ignored, so the maxfield `Name;URL;keys`
-  format works as-is
+- An optional number after a second `;` is how many keys you **already have
+  in hand** for that portal, matching the maxfield `Name;URL;keys` format
+  (see below)
 - Lines starting with `#` are comments, blank lines are ignored
 - Lines starting with `#!s`, `#!e` or `#!b` are waypoints (see below)
+- Two entries at the same coordinates are the same portal in game, so the
+  later one is dropped with a warning
+
+## Keys you already have
+
+Most of the time in a fielding run is spent hacking portals for keys and
+waiting out the cooldown, so if you have already farmed some keys the plan
+should know about it. Put the count after the link:
+
+    Mount Royal Cross; https://intel.ingress.com/intel?pll=45.5088,-73.5878; 5
+
+Those keys are a budget for the whole run, not per visit, and they are spent
+against the earliest visits that need them. Fewer hacks means less cooldown
+and often fewer heat sinks, so the plan may reorder as a result. On the
+example portal list, marking three portals as already keyed cuts about three
+minutes and drops the heat sinks needed from three to one.
+
+Portals you have no keys for need no annotation -- the default is zero.
 
 *Note:* `-n`/`--nosave` has no effect in text file mode -- the plan file is
 always written.

@@ -283,6 +283,8 @@ def main():
     else:
         portals, waypoints = text_interface.get_portals_from_file(args.textfile)
 
+    portals = maxfield.dedupe_portals(portals)
+
     logger.info('Considering %d portals and %s waypoints', len(portals), len(waypoints))
 
     # Stick some things into maxfield so we don't

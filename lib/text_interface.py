@@ -127,11 +127,32 @@ def get_portals_from_file(filename):
             continue
             
         coords = _get_qp_from_url(url, qp='pll')
-        if coords:
-            logger.info('Adding portal: %s', name)
-            portals.append((name, coords))
-        else:
+        if not coords:
             logger.warning(f"Could not extract coordinates from URL for portal {name}")
+            continue
+
+        # Any remaining bare number is how many keys we already hold for
+        # this portal (maxfield uses the same convention)
+        keys = 0
+        for part in parts[1:]:
+            part = part.strip()
+            if part == url or not part:
+                continue
+            try:
+                keys = int(part)
+            except ValueError:
+                logger.warning(f"Ignoring unrecognized field '{part}' for portal {name}")
+                continue
+            if keys < 0:
+                logger.warning(f"Ignoring negative key count for portal {name}")
+                keys = 0
+            break
+
+        if keys:
+            logger.info('Adding portal: %s (%d keys in hand)', name, keys)
+        else:
+            logger.info('Adding portal: %s', name)
+        portals.append((name, coords, None, keys))
 
     # make sure end waypoint is always last in the waypoint list
     if endpoint_loc is not None and endpoint_loc != len(waypoints)-1:

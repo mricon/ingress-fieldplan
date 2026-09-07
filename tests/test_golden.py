@@ -47,6 +47,9 @@ SHIPPED_DEFAULTS = {name: getattr(maxfield, name) for name in ('minap', 'maxmu',
 FIXTURES = {
     'waypoints': ('waypoints.txt', 60),
     'rand30': ('rand30.txt', 40),
+    # same portals as waypoints.txt, but with keys already in hand on three of
+    # them, so the whole pipeline is pinned with the key budget in play
+    'keys': ('keys.txt', 60),
 }
 # name: (fixture file, iterations, maxmu). maxmu picks the other branch in
 # both make_subset (largest vs smallest seed triangle) and add_subset_portal
@@ -167,7 +170,7 @@ def check_subset_invariants():
 
     # The hot loops read these tables by active-graph node id, so every cell
     # has to be the full-graph cell its endpoints' 'pos' values name
-    dist, tim, blocker = maxfield.get_active_tables()
+    dist, tim, blocker, keys = maxfield.get_active_tables()
     for name, table, master in (('dist', dist, maxfield.dist_matrix), ('time', tim, maxfield.time_matrix)):
         bad = [(i, j) for i in range(b.order()) for j in range(b.order())
                if table[i][j] != int(master[b.nodes[i]['pos']][b.nodes[j]['pos']])]

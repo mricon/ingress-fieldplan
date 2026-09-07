@@ -172,10 +172,10 @@ def gen_distance_matrix(gmapskey=None):
         time_matrix.append(matrow_dur)
 
 
-# Lookup tables for the current active_graph: (graph, dist, time, blocker)
+# Lookup tables for the current active_graph: (graph, dist, time, blocker, keys)
 # dist/time are n x n lists indexed by active-graph node id, so the hot
 # loops in get_workplan_stats never go through the 'pos' indirection.
-_active_tables = (None, None, None, None)
+_active_tables = (None, None, None, None, None)
 
 
 def get_active_tables():
@@ -187,7 +187,8 @@ def get_active_tables():
         dist = [[dist_matrix[pos[i]][pos[j]] for j in range(n)] for i in range(n)]
         tim = [[int(time_matrix[pos[i]][pos[j]]) for j in range(n)] for i in range(n)]
         blocker = [a.nodes[i].get('special') == '_w_blocker' for i in range(n)]
-        _active_tables = (a, dist, tim, blocker)
+        keys = [a.nodes[i].get('keys', 0) for i in range(n)]
+        _active_tables = (a, dist, tim, blocker, keys)
     return _active_tables[1:]
 
 
@@ -205,6 +206,22 @@ def get_portal_time(p1, p2):
         p1 = active_graph.nodes[p1]['pos']
         p2 = active_graph.nodes[p2]['pos']
     return int(time_matrix[p1][p2])
+
+
+def dedupe_portals(portals):
+    # Two entries at one location are the same portal in game, so a plan
+    # built from both tells you to walk to where you already are and to
+    # link a portal to itself. Drop the later entries, keep the first.
+    seen = dict()
+    unique = list()
+    for row in portals:
+        pll = row[1].strip()
+        if pll in seen:
+            logger.warning('Ignoring "%s": same location as "%s" (%s)', row[0], seen[pll], pll)
+            continue
+        seen[pll] = row[0]
+        unique.append(row)
+    return unique
 
 
 def populate_graphs(portals, waypoints):
@@ -248,6 +265,11 @@ def populate_graph(portals, basis=None):
             a.nodes[num]['special'] = row[2]
         else:
             a.nodes[num]['special'] = None
+        # Keys already in hand for this portal; they save hacking time
+        if len(row) > 3 and row[3]:
+            a.nodes[num]['keys'] = int(row[3])
+        else:
+            a.nodes[num]['keys'] = 0
         lat = int(float(coord_parts[0]) * 1.e6)
         lon = int(float(coord_parts[1]) * 1.e6)
         locs.append(np.array([lat, lon], dtype=float))
@@ -328,7 +350,7 @@ def make_workplan(a, is_subset=False):
 
     if cachekey not in capture_cache:
         logger.debug('Capture cache miss, starting ortools calculation')
-        dist, _, _ = get_active_tables()
+        dist, _, _, _ = get_active_tables()
         search_ms = capture_search_ms
         if is_subset:
             search_ms = min(search_ms, SUBSET_SEARCH_MS_PER_NODE * a.order())
@@ -418,7 +440,7 @@ def precompute_capture_routes(ncpus):
     global active_graph
     a = combined_graph
     active_graph = a
-    dist, _, _ = get_active_tables()
+    dist, _, _, _ = get_active_tables()
 
     w_start = None
     for i in range(a.order()):
@@ -477,7 +499,7 @@ def reverse_edge(p, q):
     active_graph.remove_edge(p, q)
 
 
-def get_needed_keys(workplan):
+def get_needed_keys(workplan, keys_t=None):
     """
     For every index where the agent arrives at a portal (first entry of a
     run of consecutive actions at the same portal), work out how many keys
@@ -487,6 +509,10 @@ def get_needed_keys(workplan):
     needkeys: keys for all future links to p if this is the last visit,
               otherwise only the links to p made before the next visit.
     Computed in a single backward pass instead of a lookahead per visit.
+
+    keys_t, if given, is the number of keys already in hand per portal.
+    Those are a budget for the whole run, not per visit, so they are spent
+    against the earliest visits that need them.
     """
     n = len(workplan)
     links_to = dict()     # portal -> links to it at indices > current
@@ -509,13 +535,28 @@ def get_needed_keys(workplan):
             at_next_visit[p] = links_to.get(p, 0)
         if q is not None:
             links_to[q] = links_to.get(q, 0) + 1
+
+    if keys_t and any(keys_t):
+        budget = dict()
+        for idx in range(n):
+            if not needkeys[idx]:
+                continue
+            p = workplan[idx][0]
+            if p not in budget:
+                budget[p] = keys_t[p]
+            if not budget[p]:
+                continue
+            spend = min(budget[p], needkeys[idx])
+            needkeys[idx] -= spend
+            budget[p] -= spend
+
     return needkeys, lastvisit
 
 
 def get_workplan_stats(workplan):
     workplan = remove_useless_captures(workplan)
-    dist_t, time_t, blocker = get_active_tables()
-    needkeys_at, lastvisit_at = get_needed_keys(workplan)
+    dist_t, time_t, blocker, keys_t = get_active_tables()
+    needkeys_at, lastvisit_at = get_needed_keys(workplan, keys_t)
 
     totalap = active_graph.order() * CAPTUREAP
     totaldist = 0
