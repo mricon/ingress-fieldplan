@@ -387,6 +387,173 @@ def check_default_iterations():
     return fails
 
 
+def check_blocker_guard():
+    """
+    workplan_is_valid()'s blocker rule, tested where the route cannot hide it.
+
+    The capture route now visits blockers first, and that alone keeps plans
+    clean: delete the guard entirely and check_no_links_before_blockers()
+    still passes, because improve_workplan() never gets near a state the
+    guard would have to refuse. That makes the end-to-end check blind to
+    the very rule it is named after, so the rule is pinned directly here --
+    once as a predicate, and once by handing improve_workplan() a capture
+    route with the blocker last, which is what the route used to produce.
+
+    The route ordering is the optimisation; this is the correctness.
+    """
+    fails = []
+    reset_state()
+    portals, waypoints = text_interface.get_portals_from_file(
+        os.path.join(HERE, 'fixtures', 'waypoints.txt'))
+    maxfield.populate_graphs(portals, waypoints)
+    maxfield.gen_distance_matrix(None)
+    np.random.seed(SEED)
+
+    b = maxfield.portal_graph.copy()
+    if not maxfield.max_fields(b):
+        return ['could not build a graph to check the guard with']
+    for t in b.triangulation:
+        t.markEdgesWithFields()
+    maxfield.extend_graph_with_waypoints(b)
+    maxfield.active_graph = b
+
+    blockers = maxfield.get_blockers(b)
+    if not blockers:
+        return ['waypoints.txt no longer has a blocker to check']
+    blk = sorted(blockers)[0]
+    depends = maxfield.get_link_depends(b)
+
+    linkplan = [None] * b.size()
+    for p, q in b.edges():
+        linkplan[b.edges[p, q]['order']] = (p, q, len(b.edges[p, q]['fields']))
+    others = [(n, None, 0) for n in range(b.order()) if n not in blockers]
+    down_first = [(blk, None, 0)] + others
+    down_last = others + [(blk, None, 0)]
+
+    if not maxfield.workplan_is_valid(down_first + linkplan, depends, blockers=blockers):
+        fails.append('taking the blocker down first was rejected')
+    if not maxfield.workplan_is_valid(down_last + linkplan, depends, blockers=blockers):
+        fails.append('taking the blocker down last, but still before any link, was rejected')
+
+    # One link moved in front of the blocker is the whole failure mode
+    early = others + linkplan[:1] + [(blk, None, 0)] + linkplan[1:]
+    if not maxfield.workplan_is_valid(early, depends, blockers=None):
+        fails.append('the early-link plan is unplayable for some other reason, '
+                     'so this checks nothing -- fix the fixture or the construction')
+    elif maxfield.workplan_is_valid(early, depends, blockers=blockers):
+        fails.append('a link thrown while the blocker was still standing was accepted')
+
+    # ALL the blockers, not just some. waypoints.txt has one, and with one
+    # "all down" and "any down" agree, so the rule has to be checked on a
+    # plan with two. workplan_is_valid() wants nothing from the graph but a
+    # depends dict, so the plan here is made up rather than solved -- which
+    # also keeps the check honest if the fixture ever changes.
+    two = {90, 91}
+    both = [(90, None, 0), (91, None, 0), (0, None, 0), (1, None, 0), (1, 0, 0)]
+    half = [(90, None, 0), (0, None, 0), (1, None, 0), (1, 0, 0), (91, None, 0)]
+    neither = [(0, None, 0), (1, None, 0), (1, 0, 0), (90, None, 0), (91, None, 0)]
+    if not maxfield.workplan_is_valid(both, {}, blockers=two):
+        fails.append('a plan with both blockers down before linking was rejected')
+    if not maxfield.workplan_is_valid(half, {}, blockers=None):
+        fails.append('the half-down plan is unplayable on its own terms, so it proves nothing')
+    if maxfield.workplan_is_valid(half, {}, blockers=two):
+        fails.append('linking with one of two blockers still standing was accepted')
+    if maxfield.workplan_is_valid(neither, {}, blockers=two):
+        fails.append('linking with both blockers still standing was accepted')
+
+    # And the guard has to hold when improve_workplan is the one reordering
+    maxfield.active_graph = b
+    moved, stats = maxfield.improve_workplan(list(down_last + linkplan))
+    standing = set()
+    for idx, (p, q, f) in enumerate(moved):
+        standing.add(p)
+        if q is not None and not blockers.issubset(standing):
+            fails.append('improve_workplan put a link at step %d, ahead of the blocker' % idx)
+            break
+    if not blockers.issubset({p for p, q, f in moved}):
+        fails.append('improve_workplan dropped the blocker visit entirely')
+    return fails
+
+
+def check_no_links_before_blockers():
+    """
+    Every blocker has to be down before the first link is thrown.
+
+    The portal list says only "there is an enemy portal here" -- nothing
+    records which links it stands in the way of -- so the only safe reading
+    is that it may block any of them. make_workplan() builds the plan as
+    captures-then-links, which satisfies that by construction, but
+    improve_workplan() then pulls links earlier to save backtracking. Until
+    workplan_is_valid() learned about blockers, 86% of plans threw at least
+    one link, and up to eight, while the blocker was still standing.
+
+    Checked on the full graph and in subset mode, since improve_workplan()
+    runs in both, and with the visit itself asserted: a plan that never goes
+    to the blocker at all would pass a naive "nothing before it" test.
+    """
+    fails = []
+    plans = 0
+
+    def walk(label, workplan, graph):
+        blockers = maxfield.get_blockers(graph)
+        if not blockers:
+            return 'the %s fixture no longer has a blocker to check' % label
+        down = set()
+        for idx, (p, q, f) in enumerate(workplan):
+            down.add(p)
+            if q is not None and not blockers.issubset(down):
+                return ('%s: link at step %d with %d blocker(s) still standing'
+                        % (label, idx, len(blockers - down)))
+        if not blockers.issubset(down):
+            return '%s: the plan never visits blocker %s' % (label, sorted(blockers - down))
+        return None
+
+    # Full graph
+    reset_state()
+    portals, waypoints = text_interface.get_portals_from_file(
+        os.path.join(HERE, 'fixtures', 'waypoints.txt'))
+    maxfield.populate_graphs(portals, waypoints)
+    maxfield.gen_distance_matrix(None)
+    np.random.seed(SEED)
+    for i in range(25):
+        maxfield.active_graph = None
+        b = maxfield.portal_graph.copy()
+        workplan, stats = solve_iteration(b, False)
+        if workplan is None:
+            continue
+        plans += 1
+        bad = walk('full graph iteration %d' % i, workplan, b)
+        if bad:
+            fails.append(bad)
+            break
+
+    # Subsets, which build their own graphs and renumber the nodes
+    reset_state()
+    maxfield.populate_graphs(portals, waypoints)
+    maxfield.gen_distance_matrix(None)
+    np.random.seed(SEED)
+    subset = maxfield.make_subset(4)
+    for i in range(25):
+        maxfield.active_graph = None
+        b = maxfield.make_subset_graph(subset).copy()
+        workplan, stats = solve_iteration(b, True)
+        if workplan is not None:
+            plans += 1
+            bad = walk('subset iteration %d' % i, workplan, b)
+            if bad:
+                fails.append(bad)
+                break
+        maxfield.active_graph = None
+        if i % SUBSET_GROW_CYCLE == SUBSET_GROW_CYCLE - 1:
+            subset = maxfield.make_subset(4, random_start=True)
+        else:
+            maxfield.add_subset_portal(subset)
+
+    if plans < 20:
+        fails.append('only %d plans were produced, too few to trust this' % plans)
+    return fails
+
+
 def check_minap_rejection():
     """
     An AP floor must reject a plan, never hand back a half-built one.
@@ -541,6 +708,8 @@ def main():
                              ('depends model', check_depends_model),
                              ('default iterations', check_default_iterations),
                              ('minap rejection', check_minap_rejection),
+                             ('blocker guard', check_blocker_guard),
+                             ('blockers before links', check_no_links_before_blockers),
                              ('module defaults', check_module_defaults)):
             fails = check()
             for msg in fails:

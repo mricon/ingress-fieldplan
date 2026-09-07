@@ -401,10 +401,16 @@ You can also add portals you need to visit to destroy blockers by using the
 same logic as with start/end waypoints. Use the `#!b Portal Name` indicator
 to mark that a portal is a blocker and not part of the fielding plan.
 
-*Note:* The software has no idea where the blocking links are, so you will
-need to review the plan to make sure that you are not throwing early links
-before destroying the blockers that would be in the way.
-    
+Fieldplan has no idea which links a blocker is actually in the way of -- the
+portal list only says that an enemy portal is there. So it assumes a blocker
+could block anything and puts **every blocker down before the first link**, and
+routes the walk to reach them early. You no longer need to check the plan for
+this by hand.
+
+That costs a little efficiency, around 2% AP per minute on the example portal
+list, because links cannot be interleaved into the capture route until the last
+blocker is gone. Plans without blockers are unaffected.
+
 ## Prioritizing MU capture (-u)
 
 By default, fieldplan will try to maximize AP per minute of gameplay, but 

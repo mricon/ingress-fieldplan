@@ -403,7 +403,8 @@ def make_workplan(a, is_subset=False):
         search_ms = capture_search_ms
         if is_subset:
             search_ms = min(search_ms, SUBSET_SEARCH_MS_PER_NODE * a.order())
-        dist_ordered = solve_capture_route(dist, w_start, linkplan[0][0], search_ms)
+        dist_ordered = solve_capture_route(dist, w_start, linkplan[0][0], search_ms,
+                                           blockers=get_blockers(a))
         capture_cache[cachekey] = dist_ordered
         if dist_ordered is None:
             logger.debug('Could not solve for these constraints, ignoring plan')
@@ -432,11 +433,17 @@ def make_workplan(a, is_subset=False):
     return workplan, stats
 
 
-def solve_capture_route(dist, w_start, w_end, search_ms):
+def solve_capture_route(dist, w_start, w_end, search_ms, blockers=None):
     """
     Order in which to visit every node of an n x n distance matrix, starting
     at w_start and finishing at w_end. Returns None if unsolvable. Pure
     function of its arguments so it can run in a worker pool.
+
+    blockers, if given, are visited before every other node. They have to be
+    down before the first link either way, so the later the route reaches
+    them the more of the plan improve_workplan() is forbidden to reorder.
+    Buying that back is worth a longer walk; the solver still picks the
+    cheapest route that respects the order.
     """
     manager = pywrapcp.RoutingIndexManager(len(dist), 1, [w_start], [w_end])
     routing = pywrapcp.RoutingModel(manager)
@@ -445,6 +452,22 @@ def solve_capture_route(dist, w_start, w_end, search_ms):
     # be invoked tens of thousands of times per solve.
     transit_callback_index = routing.RegisterTransitMatrix(dist)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+
+    if blockers:
+        # A dimension that counts stops, so cumulative values are positions
+        # in the route and can be ordered against each other
+        routing.AddConstantDimension(1, len(dist), True, 'seq')
+        seq = routing.GetDimensionOrDie('seq')
+        solver = routing.solver()
+        fixed = {w_start, w_end}
+        for b in blockers:
+            if b in fixed:
+                continue
+            bidx = manager.NodeToIndex(b)
+            for other in range(len(dist)):
+                if other in blockers or other in fixed:
+                    continue
+                solver.Add(seq.CumulVar(bidx) <= seq.CumulVar(manager.NodeToIndex(other)))
 
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
     search_parameters.first_solution_strategy = (
@@ -474,8 +497,8 @@ def solve_capture_route(dist, w_start, w_end, search_ms):
 
 
 def _solve_capture_key(job):
-    cachekey, dist, w_start, w_end, search_ms = job
-    return cachekey, solve_capture_route(dist, w_start, w_end, search_ms)
+    cachekey, dist, w_start, w_end, search_ms, blockers = job
+    return cachekey, solve_capture_route(dist, w_start, w_end, search_ms, blockers)
 
 
 def precompute_capture_routes(ncpus):
@@ -490,6 +513,7 @@ def precompute_capture_routes(ncpus):
     a = combined_graph
     active_graph = a
     dist, _, _, _ = get_active_tables()
+    blockers = get_blockers(a)
 
     w_start = None
     for i in range(a.order()):
@@ -505,7 +529,7 @@ def precompute_capture_routes(ncpus):
             start = w_start
         cachekey = (start, first)
         if cachekey not in capture_cache:
-            jobs.append((cachekey, dist, start, first, capture_search_ms))
+            jobs.append((cachekey, dist, start, first, capture_search_ms, blockers))
 
     if not jobs:
         return
@@ -771,6 +795,18 @@ def triangle_edges(a, t):
     return out
 
 
+def get_blockers(a):
+    """
+    Portals that have to come down before any link is thrown.
+
+    Nothing in the plan knows which links a blocker is standing in the way
+    of -- the portal list says "there is an enemy portal here", not what it
+    intersects. So the only safe reading is that it may block anything, and
+    every blocker has to be destroyed before the first link.
+    """
+    return {i for i in range(a.order()) if a.nodes[i].get('special') == '_w_blocker'}
+
+
 def get_link_depends(a):
     """
     edge -> set of edges that have to be made before it.
@@ -801,12 +837,16 @@ def get_link_depends(a):
     return depends
 
 
-def workplan_is_valid(workplan, depends, maxlinks=8):
+def workplan_is_valid(workplan, depends, maxlinks=8, blockers=None):
     """
     A plan is playable when every link is thrown from the portal we are
     standing at, to a portal we have already captured, after the other two
-    edges of any field it completes, and without exceeding the outbound
-    link limit.
+    edges of any field it completes, without exceeding the outbound link
+    limit, and once every blocker is down.
+
+    The blocker rule is the blunt one: we do not know which links a blocker
+    is in the way of, so none may be thrown until all of them are gone. See
+    get_blockers().
     """
     seen = set()
     made = set()
@@ -815,6 +855,8 @@ def workplan_is_valid(workplan, depends, maxlinks=8):
         seen.add(p)
         if q is None:
             continue
+        if blockers and not blockers.issubset(seen):
+            return False
         if q not in seen:
             return False
         key = frozenset((p, q))
@@ -833,6 +875,7 @@ def improve_workplan(workplan):
     a.orig_workplan = list(workplan)
     a.fixes = list()
     depends = get_link_depends(a)
+    blockers = get_blockers(a)
     rcount = 0
     current_stats = get_workplan_stats(workplan)
     fielders_moved = False
@@ -888,7 +931,7 @@ def improve_workplan(workplan):
 
                     cwp = list(nwp)
                     cwp.insert(newpos, moved)
-                    if not workplan_is_valid(cwp, depends):
+                    if not workplan_is_valid(cwp, depends, blockers=blockers):
                         continue
                     new_stats = get_workplan_stats(cwp)
                     if not workplan_is_better(current_stats, new_stats):
@@ -915,7 +958,11 @@ def improve_workplan(workplan):
             elif q is not None and a.out_degree(q) < 8:
                 nwp = list(workplan)
                 nwp[i] = (q, p, f)
-                if workplan_is_valid(nwp, depends):
+                # blockers cannot actually matter here -- reversing in place
+                # leaves the link at the same index, and a blocker is never
+                # a link endpoint, so it cannot cross one. Passed anyway so
+                # the branch stays correct if it ever learns to relocate.
+                if workplan_is_valid(nwp, depends, blockers=blockers):
                     new_stats = get_workplan_stats(nwp)
                     if workplan_is_better(current_stats, new_stats):
                         a.fixes.append('R%s: In-place reversed %s at %s' % (rcount, workplan[i], i))
