@@ -54,6 +54,9 @@ travelmode = 'walking'
 maxtime = None
 # ms of guided local search to improve each capture route; 0 = greedy only
 capture_search_ms = 200
+# Subset (--maxtime) routes are solved on every cache miss, so cap their
+# budget by size: measured gains saturate at roughly this many ms per node.
+SUBSET_SEARCH_MS_PER_NODE = 3
 
 capture_cache = dict()
 dist_matrix = list()
@@ -323,7 +326,10 @@ def make_workplan(a, is_subset=False):
     if cachekey not in capture_cache:
         logger.debug('Capture cache miss, starting ortools calculation')
         dist, _, _ = get_active_tables()
-        dist_ordered = solve_capture_route(dist, w_start, linkplan[0][0], capture_search_ms)
+        search_ms = capture_search_ms
+        if is_subset:
+            search_ms = min(search_ms, SUBSET_SEARCH_MS_PER_NODE * a.order())
+        dist_ordered = solve_capture_route(dist, w_start, linkplan[0][0], search_ms)
         capture_cache[cachekey] = dist_ordered
         if dist_ordered is None:
             logger.debug('Could not solve for these constraints, ignoring plan')

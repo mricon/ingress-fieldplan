@@ -207,7 +207,9 @@ travelling-salesman problem. By default the solver spends 200 ms of local
 search improving each route on top of the quick greedy one, which typically
 shortens the capture walk by a few percent. Routes are cached, so this costs a
 few seconds per run in total. Pass `--capture-search-ms 0` to skip it, or a
-larger value to search harder on big portal sets.
+larger value to search harder on big portal sets. In `--maxtime` mode routes
+are solved far more often, so the budget is additionally capped at a few
+milliseconds per portal in the subset, which is where the gains level off.
 
 ## Getting lots of keys from portals
 
