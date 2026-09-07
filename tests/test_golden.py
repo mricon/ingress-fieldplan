@@ -26,6 +26,7 @@ Usage:
 import json
 import logging
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -386,6 +387,71 @@ def check_default_iterations():
     return fails
 
 
+def check_minap_rejection():
+    """
+    An AP floor must reject a plan, never hand back a half-built one.
+
+    Under --minap make_workplan gives up before solving the capture route,
+    which saves real time in --maxtime mode. What it used to give back was
+    the bare link order, and that is not a plan: nothing is captured, no
+    waypoint is visited, no blocker comes down, and the first action links
+    out of a portal never taken. It also scored *better* than a real plan,
+    because get_workplan_stats() credits capture AP from the graph whether
+    or not the plan captures anything, so it kept all the AP and paid none
+    of the travel. With no --maxtime to reject it, that non-plan won.
+    """
+    fails = []
+    reset_state()
+    portals, waypoints = text_interface.get_portals_from_file(
+        os.path.join(HERE, 'fixtures', 'waypoints.txt'))
+    maxfield.populate_graphs(portals, waypoints)
+    maxfield.gen_distance_matrix(None)
+
+    def solve(minap):
+        maxfield.minap = minap
+        maxfield.capture_cache = dict()
+        maxfield.active_graph = None
+        np.random.seed(SEED)
+        return solve_iteration(maxfield.portal_graph.copy(), False)
+
+    workplan, stats = solve(None)
+    if workplan is None:
+        fails.append('no workplan at all with no AP floor')
+        return fails
+    reachable = stats['ap']
+
+    # A floor it cannot reach: rejected, and told apart from a solver failure
+    workplan, stats = solve(reachable + 1000000)
+    if workplan is not None:
+        fails.append('an unreachable AP floor still returned a workplan of %d steps; '
+                     'captures=%d, so it is a bare linkplan'
+                     % (len(workplan), len([w for w in workplan if w[1] is None])))
+    if stats is None:
+        fails.append('the AP floor rejection is indistinguishable from a solver failure')
+    elif stats['ap'] >= reachable + 1000000:
+        fails.append('rejected a plan that met the floor')
+
+    # A floor it clears: a real plan, capture route and all
+    workplan, stats = solve(1)
+    if workplan is None:
+        fails.append('a floor of 1 AP rejected everything')
+    elif not [w for w in workplan if w[1] is None]:
+        fails.append('a cleared AP floor returned a linkplan with no capture steps')
+
+    # And the CLI must not let the two be used apart, since only --maxtime
+    # ever consults the floor
+    proc = subprocess.run(
+        [sys.executable, os.path.join(os.path.dirname(HERE), 'fieldplan.py'),
+         '--textfile', os.path.join(HERE, 'fixtures', 'waypoints.txt'), '--minap', '1000'],
+        capture_output=True, text=True)
+    if proc.returncode == 0:
+        fails.append('--minap without --maxtime was accepted')
+    elif 'minap' not in (proc.stderr + proc.stdout):
+        fails.append('--minap without --maxtime failed without saying why: %s'
+                     % (proc.stderr.strip().splitlines() or ['(silence)'])[-1])
+    return fails
+
+
 def check_module_defaults():
     """A library caller who configures nothing must still get the whole algorithm.
 
@@ -474,6 +540,7 @@ def main():
                              ('plan accounting', check_plan_accounting),
                              ('depends model', check_depends_model),
                              ('default iterations', check_default_iterations),
+                             ('minap rejection', check_minap_rejection),
                              ('module defaults', check_module_defaults)):
             fails = check()
             for msg in fails:

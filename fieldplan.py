@@ -93,21 +93,27 @@ def queue_job(args, best, counter, ready_queue):
 
         workplan, stats = maxfield.make_workplan(b, is_subset)
 
-        if workplan is None:
+        if stats is None:
             ready_queue.put(failed)
             continue
+
+        # (None, stats) means make_workplan gave up before solving the
+        # capture route because the links alone cannot reach --minap. It is
+        # not a playable plan, so it can only ever be rejected -- never
+        # scored, and never allowed to set the bar for other plans.
+        under_minap = workplan is None
 
         if args.maxmu:
             mybest = stats['sqmpmin']
         else:
             mybest = stats['appmin']
 
-        if mybest > local_best:
+        if mybest > local_best and not under_minap:
             local_best = mybest
             nogood = 0
 
         is_best = False
-        if mybest > best.value:
+        if mybest > best.value and not under_minap:
             is_best = True
             bestmode = True
             nogood_lim = best_max
@@ -115,7 +121,7 @@ def queue_job(args, best, counter, ready_queue):
         if args.maxtime:
             accept = True
             bad_time = False
-            bad_ap = False
+            bad_ap = under_minap
             # Try accepting overtime results in maxmu mode,
             # otherwise we keep dumber plans as best
             if not (bestmode and args.maxmu) and stats['time'] > args.maxtime:
@@ -148,6 +154,12 @@ def queue_job(args, best, counter, ready_queue):
 
             if not accept:
                 continue
+
+        elif under_minap:
+            # The CLI refuses --minap without --maxtime, so this is the
+            # backstop for anything driving the library directly
+            nogood += 1
+            continue
 
         if not is_best:
             nogood += 1
@@ -207,7 +219,7 @@ def main():
     parser.add_argument('-t', '--maxtime', default=None, type=int,
                         help='Ignore plans that would take longer than this (in minutes)')
     parser.add_argument('--minap', default=None, type=int,
-                        help='Ignore plans that result in less AP than specified (used with --maxtime)')
+                        help='Ignore plans that result in less AP than specified (requires --maxtime)')
     parser.add_argument('--maxcpus', default=mp.cpu_count(), type=int,
                         help='Maximum number of cpus to use')
     parser.add_argument('-l', '--log', default=None,
@@ -251,6 +263,13 @@ def main():
 
     if args.capture_search_ms < 0:
         parser.error('--capture-search-ms must be 0 or greater')
+
+    if args.minap is not None and not args.maxtime:
+        # The AP floor is only ever consulted while rejecting plans in
+        # --maxtime mode. On its own it used to hand back a bare link order
+        # with no capture route at all, which then won because it scored
+        # full capture AP without paying any travel time for it.
+        parser.error('--minap only means something with --maxtime.')
 
     if args.plotdpi < 1:
         parser.error('%s is not a valid screen dpi' % args.plotdpi)

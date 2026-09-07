@@ -351,8 +351,15 @@ def make_workplan(a, is_subset=False):
     if minap is not None:
         stats = get_workplan_stats(linkplan)
         if stats['ap'] < minap:
+            # Give up before paying for the capture route. What we have is
+            # a bare link order, not a plan: nothing is captured, no
+            # waypoint is visited, no blocker comes down, and the first
+            # action links out of a portal we never took. Handing it back
+            # as a workplan let it be played (see the --minap note in
+            # fieldplan.py), so say what it is instead. (None, stats) is
+            # "rejected, here is why"; (None, None) is "the solver failed".
             logger.debug('Plan does not have enough AP, abandon early')
-            return linkplan, stats
+            return None, stats
 
     # pre-optimize linkplan without the captures first
     linkplan, stats = improve_workplan(linkplan)

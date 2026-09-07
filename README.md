@@ -467,6 +467,10 @@ You can pass `--minap` to tell Fieldplan to not consider plans resulting in
 too few total AP points. For example, to get plans with at least 50,000 AP, run
 `--minap 50000`.
 
+`--minap` only works together with `--maxtime` and Fieldplan will refuse to run
+without it. The AP floor is a filter applied while searching for a plan that
+fits your time budget; on its own there is nothing for it to filter.
+
 ## Copy-pasting portal lists from IITC
 
 Manually inputting portals can be tedious, so there is a way to copy and paste
