@@ -1,6 +1,6 @@
 import logging
 from urllib.parse import urlparse, parse_qs
-from lib import maxfield
+from lib import plansteps
 
 logger = logging.getLogger('fieldplan')
 
@@ -163,8 +163,7 @@ def get_portals_from_file(filename):
 
 def write_workplan(filename, a, workplan, stats, faction, travelmode='walking'):
     import os
-    from pprint import pformat
-    
+
     base, ext = os.path.splitext(filename)
     outfile = f"{base}_plan.txt"
     
@@ -186,78 +185,41 @@ def write_workplan(filename, a, workplan, stats, faction, travelmode='walking'):
             'driving': u"\U0001F697",
         }
 
-        prev_p = None
-        plan_at = 0
-        
-        for p, q, fld in workplan:
-            plan_at += 1
+        for stop in plansteps.build_stops(a, workplan, travelmode):
+            travel = stop['travel']
+            if travel is None:
+                f.write(f"Start at {stop['name']}\n")
+            elif travel['moved']:
+                f.write(f"{travelmoji.get(travelmode, '')} Move to {stop['name']} "
+                        f"({travel['nicedist']}, {travel['time']} min)\n")
+            else:
+                f.write(f"\u25bc Move to {stop['name']}\n")
 
-            if p != prev_p:
-                # Travel info
-                if prev_p is not None:
-                    dist = maxfield.get_portal_distance(prev_p, p)
-                    duration = maxfield.get_portal_time(prev_p, p)
-                    if dist > 40:
-                         if dist >= 500:
-                             nicedist = '%0.1f km' % (dist/float(1000))
-                         else:
-                             nicedist = '%d m' % dist
-                         f.write(f"{travelmoji.get(travelmode, '')} Move to {a.nodes[p]['name']} ({nicedist}, {duration} min)\n")
-                    else:
-                         f.write(f"▼ Move to {a.nodes[p]['name']}\n")
+            if stop['is_waypoint']:
+                f.write(f"[W] Waypoint: {stop['name']}\n")
+                continue
+
+            if stop['is_blocker']:
+                f.write(f"[X] DESTROY BLOCKER at {stop['name']}\n")
+                continue
+
+            f.write(f"[P] At {stop['name']}\n")
+
+            keys = stop['keys']
+            if keys:
+                if keys['lastvisit']:
+                    f.write(f"  [H] Ensure {keys['total']} keys here\n")
+                elif keys['ensure']:
+                    f.write(f"  [H] Ensure {keys['ensure']} keys here "
+                            f"(will need {keys['total']} total)\n")
                 else:
-                    f.write(f"Start at {a.nodes[p]['name']}\n")
+                    f.write(f"  [H] Need {keys['total']} max keys later\n")
 
-                # Portal Actions
-                if 'special' in a.nodes[p] and a.nodes[p]['special'] in ('_w_start', '_w_end'):
-                    f.write(f"[W] Waypoint: {a.nodes[p]['name']}\n")
-                    prev_p = p
-                    continue
+            if stop['shields']:
+                f.write(f"  [S] Shields ON ({stop['shields']['links']} links)\n")
 
-                if 'special' in a.nodes[p] and a.nodes[p]['special'] == '_w_blocker':
-                    f.write(f"[X] DESTROY BLOCKER at {a.nodes[p]['name']}\n")
-                    prev_p = p
-                    continue
-                
-                f.write(f"[P] At {a.nodes[p]['name']}\n")
-
-                # Keys check
-                ensurekeys = 0
-                totalkeys = 0
-                lastvisit = True
-                same_p = True
-                
-                for fp, fq, ff in workplan[plan_at:]:
-                    if fp == p:
-                        if same_p: continue
-                        if lastvisit:
-                            lastvisit = False
-                            ensurekeys = totalkeys
-                    else:
-                        same_p = False
-                    if fq == p:
-                        totalkeys += 1
-                
-                if totalkeys:
-                    if lastvisit:
-                        f.write(f"  [H] Ensure {totalkeys} keys here\n")
-                    elif ensurekeys:
-                        f.write(f"  [H] Ensure {ensurekeys} keys here (will need {totalkeys} total)\n")
-                    else:
-                        f.write(f"  [H] Need {totalkeys} max keys later\n")
-                
-                if lastvisit:
-                    totallinks = a.out_degree(p) + a.in_degree(p)
-                    f.write(f"  [S] Shields ON ({totallinks} links)\n")
-                
-                prev_p = p
-
-            if q is not None:
-                action_char = 'L'
-                if fld > 1: action_char = 'D' # Double field
-                elif fld == 1: action_char = 'F' # Field
-                
-                f.write(f"  [{action_char}] Link to {a.nodes[q]['name']}\n")
+            for link in stop['links']:
+                f.write(f"  [{link['action']}] Link to {link['name']}\n")
 
     logger.info("Text plan generation done.")
 

@@ -7,7 +7,7 @@ from googleapiclient.discovery import build
 from httplib2 import Http
 from oauth2client import file
 
-from lib import maxfield
+from lib import maxfield, plansteps
 
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -181,115 +181,63 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     logger.info('workplan:\n%s', pformat(workplan))
     logger.info('stats:\n%s', pformat(stats))
 
-    # Track which portals we've already captured
-    # (easier than going through the list backwards)
-    prev_p = None
-    plan_at = 0
+    stops = plansteps.build_stops(a, workplan, travelmode)
     n_waypoints = 0
 
-    for p, q, f in workplan:
-        plan_at += 1
+    for stop in stops:
+        travel = stop['travel']
+        mapurl = stop['mapurl']
 
-        # Are we at a different location than the previous portal?
-        if p != prev_p:
-            # How many keys do we need if/until we come back?
-            ensurekeys = 0
-            totalkeys = 0
-            # Track when we leave this portal
-            lastvisit = True
-            same_p = True
-            for fp, fq, ff in workplan[plan_at:]:
-                if fp == p:
-                    # Are we still at the same portal?
-                    if same_p:
-                        continue
-                    if lastvisit:
-                        lastvisit = False
-                        ensurekeys = totalkeys
-                else:
-                    # we're at a different portal
-                    same_p = False
-                if fq == p:
-                    # Future link to this portal
-                    totalkeys += 1
-
-            mapurl = 'https://www.google.com/maps/dir/?api=1&destination=%s&travelmode=%s' % (
-                a.nodes[p]['pll'], travelmode
-            )
-            if 'special' in a.nodes[p]:
-                special = a.nodes[p]['special']
+        if travel is None:
+            planrows.append((travelmoji[travelmode], '=HYPERLINK("%s"; "map")' % mapurl))
+            logger.info('-->Start at %s', stop['name'])
+        elif travel['moved']:
+            # The sheet shows the walk time next to a distance in km, where
+            # it is long enough to be worth planning around
+            if travel['dist'] >= 500:
+                nicedist = '%0.1f km (%s min)' % (travel['dist']/float(1000), travel['time'])
             else:
-                special = None
+                nicedist = travel['nicedist']
+            planrows.append((u'\u25bc',))
+            planrows.append((travelmoji[travelmode], '=HYPERLINK("%s"; "%s")' % (mapurl, nicedist)))
+            logger.info('-->Move to %s [%s]', stop['name'], nicedist)
+        else:
+            planrows.append((u'\u25bc',))
 
-            if prev_p is not None:
-                dist = maxfield.get_portal_distance(prev_p, p)
-                duration = maxfield.get_portal_time(prev_p, p)
+        logger.info('--|At %s', stop['name'])
+        if stop['is_waypoint']:
+            planrows.append(('W', stop['name']))
+            n_waypoints += 1
+            continue
 
-                if dist > 40:
-                    if dist >= 500:
-                        nicedist = '%0.1f km (%s min)' % ((dist/float(1000)), duration)
-                    else:
-                        nicedist = '%d m' % dist
-                    hyperlink = '=HYPERLINK("%s"; "%s")' % (mapurl, nicedist)
-                    planrows.append((u'▼',))
-                    planrows.append((travelmoji[travelmode], hyperlink))
-                    logger.info('-->Move to %s [%s]', a.nodes[p]['name'], nicedist)
-                else:
-                    planrows.append((u'▼',))
+        planrows.append(('P', stop['name']))
+
+        if stop['is_blocker']:
+            planrows.append(('X', 'destroy blocker'))
+            logger.info('--|X: destroy blocker')
+            n_waypoints += 1
+            continue
+
+        keys = stop['keys']
+        if keys:
+            if keys['lastvisit']:
+                logger.info('--|H: ensure %d keys', keys['total'])
+                planrows.append(('H', 'ensure %d keys' % keys['total']))
+            elif keys['ensure']:
+                logger.info('--|H: ensure %d keys (%d max)', keys['ensure'], keys['total'])
+                planrows.append(('H', 'ensure %d keys (%d max)' % (keys['ensure'], keys['total'])))
             else:
-                hyperlink = '=HYPERLINK("%s"; "map")' % mapurl
-                planrows.append((travelmoji[travelmode], hyperlink))
-                logger.info('-->Start at %s', a.nodes[p]['name'])
+                logger.info('--|H: %d max keys needed', keys['total'])
+                planrows.append(('H', '%d max keys needed' % keys['total']))
 
-            logger.info('--|At %s', a.nodes[p]['name'])
-            # Are we at a waypoint?
-            if special in ('_w_start', '_w_end'):
-                planrows.append(('W', a.nodes[p]['name']))
-                # Nothing else here
-                prev_p = p
-                n_waypoints += 1
-                continue
+        if stop['shields']:
+            planrows.append(('S', 'shields on (%d links)' % stop['shields']['links']))
+            logger.info('--|S: shields on (%d out, %d in)',
+                        a.out_degree(stop['node']), a.in_degree(stop['node']))
 
-            planrows.append(('P', a.nodes[p]['name']))
-
-            # Are we at a blocker?
-            if special == '_w_blocker':
-                planrows.append(('X', 'destroy blocker'))
-                logger.info('--|X: destroy blocker')
-                # Nothing else here
-                prev_p = p
-                n_waypoints += 1
-                continue
-
-            if totalkeys:
-                if lastvisit:
-                    logger.info('--|H: ensure %d keys', totalkeys)
-                    planrows.append(('H', 'ensure %d keys' % totalkeys))
-                elif ensurekeys:
-                    logger.info('--|H: ensure %d keys (%d max)', ensurekeys, totalkeys)
-                    planrows.append(('H', 'ensure %d keys (%d max)' % (ensurekeys, totalkeys)))
-                else:
-                    logger.info('--|H: %d max keys needed', totalkeys)
-                    planrows.append(('H', '%d max keys needed' % totalkeys))
-
-            if lastvisit:
-                totallinks = a.out_degree(p) + a.in_degree(p)
-                planrows.append(('S', 'shields on (%d links)' % totallinks))
-                logger.info('--|S: shields on (%d out, %d in)', a.out_degree(p), a.in_degree(p))
-
-            prev_p = p
-
-        if q is not None:
-            # Add links/fields
-            if f > 1:
-                action = 'D'
-            elif f == 1:
-                action = 'F'
-            else:
-                action = 'L'
-
-            planrows.append((action, u'▶%s' % a.nodes[q]['name']))
-            logger.info('  \\%s--> %s', action, a.nodes[q]['name'])
+        for link in stop['links']:
+            planrows.append((link['action'], u'\u25b6%s' % link['name']))
+            logger.info('  \\%s--> %s', link['action'], link['name'])
 
     totalkm = stats['dist']/float(1000)
     logger.info('Total workplan distance: %0.2f km', totalkm)

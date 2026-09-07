@@ -14,15 +14,17 @@ the original maxfield program are:
 5. Uses Google Directions API for precise distances (optional, requires an API key)
 6. Supports walking, biking, and driving plans (mostly relevant with Google Directions)
 
-There are two ways to get your plan out of it:
+There are three ways to get your plan out of it:
 
 - **a plain text file** -- no accounts, no API keys, nothing to set up
-- **a Google Spreadsheet** -- more work to set up, but the result is a
-  genuinely nice step-by-step checklist on your phone
+- **a single HTML page** (`-w`) -- a step-by-step checklist for your phone that
+  needs no account and no network, and remembers how far you have got
+- **a Google Spreadsheet** -- more work to set up, but easy to edit and reorder
+  by hand, and it syncs across your devices
 
-This is how the spreadsheet version looks on a mobile phone:
+This is how the HTML plan and the spreadsheet look on a mobile phone:
 
-<img src="https://raw.githubusercontent.com/mricon/ingress-fieldplan/master/screenshots/spreadsheet-view.jpg" width="250">
+<img src="https://raw.githubusercontent.com/mricon/ingress-fieldplan/master/screenshots/html-plan.jpg" width="250"> <img src="https://raw.githubusercontent.com/mricon/ingress-fieldplan/master/screenshots/spreadsheet-view.jpg" width="250">
 
 Here are a few examples of annotated spreadsheets generated with fieldplan:
 
@@ -121,6 +123,58 @@ Portals you have no keys for need no annotation -- the default is zero.
 *Note:* `-n`/`--nosave` has no effect in text file mode -- the plan file is
 always written.
 
+If you would rather follow the plan on your phone than off a printout, add
+`-w` and read on.
+
+# Taking the plan on your phone
+
+Add `-w` and you also get a single HTML file you can open in your phone's
+browser and follow while you walk or ride:
+
+    uv run python fieldplan.py --textfile portals.txt -w
+
+<img src="https://raw.githubusercontent.com/mricon/ingress-fieldplan/master/screenshots/html-plan.jpg" width="250">
+
+It writes `portals_plan.html` next to your input file, or you can give it a
+path of your own: `-w ~/Downloads/tonight.html`. Mail it to yourself, drop it
+in your cloud folder of choice, or plug the phone in and copy it across.
+
+One stop per card. Swipe sideways to move between them, with the next card
+peeking in at the edge so you can always see what is coming. Tap an action to
+tick it off; the card outlines itself when everything at that stop is done and
+the bar at the bottom turns into a "go to" button for the next one. The strip
+above the buttons always names the next stop and what waits there, so you know
+whether to expect a hack, a link or a blocker before you get there.
+
+The rest of it:
+
+- **Navigate** hands the portal to Google Maps for turn-by-turn directions, in
+  the travel mode you generated the plan with
+- each link shows how far away its target is and roughly which way to face,
+  which helps when you are picking it out of a crowded scanner
+- **All stops** opens the whole run: a map of the route with the fields filling
+  in as you complete them, the totals, and every stop with its progress. Tap
+  any of them to jump there
+- the header counts down the distance and time still to travel
+- the cup icon asks the browser to keep the screen awake, so it stops locking
+  every thirty seconds while you walk. Not every browser offers this, and the
+  button is hidden when yours does not
+- it follows your phone's light or dark setting; the moon icon overrides it
+
+**No account, no network.** Everything is in the one file -- no fonts, scripts
+or styles are fetched from anywhere, so the plan works in a park with no
+signal. Your progress is saved in that browser's local storage, keyed to the
+plan, so closing the tab and coming back resumes where you were, and a plan you
+generate later starts clean instead of inheriting old ticks. Nothing is sent
+anywhere, which also means progress does not follow you to another phone, and
+clearing site data clears it. "Clear all progress" at the bottom of **All
+stops** resets it deliberately.
+
+A couple of things it does better than the spreadsheet: it counts keys you
+already hold, so it says "keys already in hand" instead of telling you to farm
+five you have in your pocket, and it lists shields after the links you make
+from that portal rather than before, which is the order you actually play.
+
 # Using Google Spreadsheets instead
 
 Spreadsheets are more setup, but worth it:
@@ -129,6 +183,10 @@ Spreadsheets are more setup, but worth it:
 2. they come preinstalled on all android phones
 3. the generated plans are easy to tweak and reorder manually if you find an improvement
 4. it's easy to mark on which step of the plan you are
+
+If it is only the last two you are after, `-w` gets you those without a Google
+account -- see above. Spreadsheet mode accepts `-w` too, if you like entering
+portals in a sheet but would rather follow the plan in a browser.
 
 The main reason why I hacked on maxfield is to make it more convenient for
 biking, as having a simple plan to follow allows me to concentrate more on

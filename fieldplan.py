@@ -4,7 +4,7 @@
 import sys
 import argparse
 
-from lib import gsheets, maxfield, animate, text_interface
+from lib import gsheets, maxfield, animate, text_interface, htmlout
 
 import logging
 import multiprocessing as mp
@@ -227,6 +227,11 @@ def main():
                         '(0 to keep the plain greedy route)')
     parser.add_argument('-j', '--jsonmap', default=None,
                         help='Save the resulting map as IITC DrawTools json')
+    # const='' means "you gave the flag but no path", so we can pick one below
+    parser.add_argument('-w', '--html', nargs='?', const='', default=None, metavar='FILE',
+                        help='Write a self-contained HTML plan to open on a phone. Pass a '
+                        'path, or give the flag alone to write it next to the input file. '
+                        'Needs no network or Google account to use.')
     # Obsolete options
     parser.add_argument('-b', '--beginfirst', action='store_true', default=False,
                         help='(Obsolete, use waypoints instead)')
@@ -451,6 +456,10 @@ def main():
 
     if args.jsonmap:
         animate.make_json(args.jsonmap, args.faction)
+
+    if args.html is not None:
+        htmlout.write_workplan(args.html or htmlout.default_filename(args), bestgraph,
+                               bestplan, beststats, args.faction, args.travelmode)
 
     if gs:
         gsheets.write_workplan(gs, args.sheetid, bestgraph, bestplan, beststats, args.faction, args.travelmode, args.nosave)

@@ -119,7 +119,7 @@ class _Exec(object):
         return self.result
 
 
-def solved_plan():
+def solved_plan(fixture='waypoints.txt', seed=1234):
     """A real graph + workplan, so write_workplan sees what it sees in anger."""
     import numpy as np
     from lib import maxfield, text_interface
@@ -136,10 +136,10 @@ def solved_plan():
     maxfield.capture_search_ms = 0
 
     portals, waypoints = text_interface.get_portals_from_file(
-        os.path.join(HERE, 'fixtures', 'waypoints.txt'))
+        os.path.join(HERE, 'fixtures', fixture))
     maxfield.populate_graphs(portals, waypoints)
     maxfield.gen_distance_matrix(None)
-    np.random.seed(1234)
+    np.random.seed(seed)
     while True:
         a = maxfield.portal_graph.copy()
         if not maxfield.max_fields(a):
