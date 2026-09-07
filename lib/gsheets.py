@@ -15,6 +15,9 @@ from urllib.parse import urlparse, parse_qs
 import logging
 logger = logging.getLogger('fieldplan')
 
+# Sheets rejects titles longer than this, and rejects duplicates outright
+SHEET_TITLE_MAXLEN = 100
+
 
 def setup():
     home = str(Path.home())
@@ -118,6 +121,40 @@ def get_portals_from_sheet(service, spid):
         waypoints.append(_ep)
 
     return portals, waypoints
+
+
+def a1_quote(title):
+    # A1 notation needs the sheet name single-quoted once it contains
+    # anything but letters, digits and underscores, and a literal
+    # single quote inside the name is escaped by doubling it
+    return "'%s'" % title.replace("'", "''")
+
+
+def unique_sheet_title(title, existing):
+    # Sheets refuses to add a second sheet with an existing title, so a
+    # re-run that produces the same plan used to die with an HttpError
+    # (issues #26/#27). Suffix until free, trimming the base to stay
+    # inside the length limit. Compared case-insensitively, since it is
+    # cheaper to add a needless suffix than to guess wrong and crash.
+    taken = {t.strip().lower() for t in existing}
+    title = title.strip()[:SHEET_TITLE_MAXLEN].strip()
+    if title.lower() not in taken:
+        return title
+    num = 2
+    while True:
+        suffix = ' #%d' % num
+        candidate = title[:SHEET_TITLE_MAXLEN - len(suffix)].strip() + suffix
+        if candidate.lower() not in taken:
+            return candidate
+        num += 1
+
+
+def get_sheet_titles(service, spid):
+    res = service.spreadsheets().get(
+        spreadsheetId=spid,
+        fields='sheets.properties.title'
+    ).execute()
+    return [sheet['properties']['title'] for sheet in res.get('sheets', [])]
 
 
 def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walking', nosave=False):
@@ -281,6 +318,7 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
 
     dtitle = '%s %s (%0.2fkm/%dP/%sAP)' % (travelmoji[travelmode], stats['nicetime'], totalkm,
                                            a.order()-n_waypoints, '{:,}'.format(stats['ap']))
+    dtitle = unique_sheet_title(dtitle, get_sheet_titles(service, spid))
     logger.info('Adding "%s" sheet with %d actions', dtitle, len(workplan))
     requests.append({
         'addSheet': {
@@ -298,12 +336,14 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
     for blurb in res['replies']:
         if 'addSheet' in blurb:
             sheet_ids.append(blurb['addSheet']['properties']['sheetId'])
+            # Use the title the API actually assigned, not the one we asked for
+            dtitle = blurb['addSheet']['properties']['title']
 
     # Now we generate a values update request
     updates = list()
 
     updates.append({
-        'range': '%s!A1:B%d' % (dtitle, len(planrows)),
+        'range': '%s!A1:B%d' % (a1_quote(dtitle), len(planrows)),
         'majorDimension': 'ROWS',
         'values': planrows,
     })
