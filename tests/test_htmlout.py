@@ -393,13 +393,19 @@ def _writers_say(a, workplan, stats, stops, sheet, text):
 
 
 def check_in_a_browser():
-    """Load the page in Chromium and use it the way a thumb would."""
+    """
+    Load the page in Chromium and use it the way a thumb would.
+
+    Driven on keys.txt rather than waypoints.txt: it is the same portals plus
+    keys in hand, so it is a strict superset, and it is the only fixture that
+    produces a pre-ticked key row for the untick check below.
+    """
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
         return None
 
-    a, workplan, stats = plan()
+    a, workplan, stats = plan('keys.txt')
     page = htmlout.render(htmlout.build_plan(a, workplan, stats, 'enl', 'walking'))
     tmp = tempfile.mkdtemp(prefix='fieldplan-page-')
     path = os.path.join(tmp, 'plan.html')
@@ -462,14 +468,17 @@ def check_in_a_browser():
         # A part-finished stop must not read as finished
         partial = pg.evaluate('''() => {
             const cards = [...document.querySelectorAll('.deck > .card')];
+            const off = a => { if (a.classList.contains('on')) a.click(); };
+            const on = a => { if (!a.classList.contains('on')) a.click(); };
             for (const c of cards){
               const acts = [...c.querySelectorAll('.act:not(.note)')];
               if (acts.length < 2) continue;
-              acts[0].click();
+              acts.forEach(off);          // keys in hand start ticked
+              on(acts[0]);
               const early = c.classList.contains('done');
-              acts.slice(1).forEach(a => a.click());
+              acts.slice(1).forEach(on);
               const late = c.classList.contains('done');
-              acts.forEach(a => a.click());
+              acts.forEach(off);
               return {early: early, late: late};
             }
             return null;
@@ -487,7 +496,7 @@ def check_in_a_browser():
         n = pg.evaluate("""() => {
             const c = document.querySelectorAll('.deck > .card')[1];
             const acts = [...c.querySelectorAll('.act:not(.note)')];
-            acts.forEach(a => a.click());
+            acts.forEach(a => { if (!a.classList.contains('on')) a.click(); });
             return acts.length;
         }""")
         pg.wait_for_timeout(200)
@@ -522,6 +531,45 @@ def check_in_a_browser():
             fails.append('the map drew only %d shapes' % sh['drawn'])
         if n and not sh['ok']:
             fails.append('the overview shows no finished stop')
+        # A link row is one line: name and field count, no second line. The
+        # distance and bearing used to sit under it and cost a line of height
+        # on every link, which is most of the plan.
+        rows = pg.evaluate('''() => {
+            const links = [...document.querySelectorAll('.act[data-kind="link"]')];
+            return {n: links.length,
+                    withsub: links.filter(l => l.querySelector('.sub')).length};
+        }''')
+        if not rows['n']:
+            fails.append('no link rows rendered, so their shape is untested')
+        elif rows['withsub']:
+            fails.append('%d of %d link rows carry a second line; they should be '
+                         'one line each' % (rows['withsub'], rows['n']))
+
+        # Keys you already carry arrive ticked, and the whole point of that
+        # being a real row rather than a note is that you can untick it when
+        # the count in the portal list was optimistic.
+        pre = pg.evaluate('''() => {
+            const rows = [...document.querySelectorAll('.deck > .card .act.on')];
+            const row = rows.find(r => r.querySelector('.t').textContent.includes('required'));
+            if (!row) return null;
+            const note = row.classList.contains('note');
+            row.click();
+            const off = !row.classList.contains('on');
+            row.click();
+            const backOn = row.classList.contains('on');
+            return {note: note, off: off, backOn: backOn,
+                    txt: row.querySelector('.t').textContent.trim()};
+        }''')
+        if pre is None:
+            fails.append('no key row arrived ticked, so keys in hand are not pre-ticked')
+        else:
+            if pre['note']:
+                fails.append('the pre-ticked key row is a note, so it cannot be unticked')
+            if not pre['off']:
+                fails.append('a pre-ticked key row could not be unticked: %r' % pre['txt'])
+            if not pre['backOn']:
+                fails.append('an unticked key row could not be ticked again')
+
         # The route preview: it must run, build the plan up as it goes, put the
         # live map back when it ends, and not keep going behind a closed sheet
         solid = ("() => [...document.querySelectorAll('#map line')]"
@@ -594,15 +642,24 @@ def check_in_a_browser():
                 "() => document.querySelectorAll('.deck > .card')[1].classList.contains('done')"):
             fails.append('progress did not survive a reload')
 
-        # A different plan must not inherit those ticks
-        other = htmlout.render(htmlout.build_plan(a, workplan[:-1], stats, 'enl', 'walking'))
+        # A different plan must not inherit those ticks. It does not start at
+        # zero any more -- keys already in hand arrive ticked -- so the test is
+        # that its stored state is exactly its own pre-ticked set, nothing else.
+        other_plan = htmlout.build_plan(a, workplan[:-1], stats, 'enl', 'walking')
         other_path = os.path.join(tmp, 'other.html')
         with open(other_path, 'w', encoding='utf-8') as fh:
-            fh.write(other)
+            fh.write(htmlout.render(other_plan))
+        want_pre = {act['id'] for s in other_plan['stops'] for act in s['acts']
+                    if act.get('pre')}
         pg.goto('file://' + other_path)
         pg.wait_for_timeout(400)
-        if pg.evaluate("() => document.getElementById('fill').style.width") not in ('0%', ''):
-            fails.append("a different plan picked up the first one's progress")
+        raw = pg.evaluate("() => localStorage.getItem('fieldplan:' + %r)"
+                          % other_plan['id'])
+        got = set(json.loads(raw or '[]'))
+        if got != want_pre:
+            fails.append('a different plan opened with %d ticks, want its own %d '
+                         'pre-ticked keys (%d carried over)'
+                         % (len(got), len(want_pre), len(got - want_pre)))
 
         browser.close()
     finally:

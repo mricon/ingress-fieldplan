@@ -123,9 +123,9 @@ header{flex:0 0 auto; padding:6px 12px 8px; background:var(--bg)}
 .act.note{background:transparent; border:1px dashed var(--line); min-height:0; padding:9px 10px}
 .act.note .box{display:none}
 .act.note .t{font-weight:600; color:var(--dim); font-size:14px}
-.chip{display:inline-block; font-size:11px; font-weight:800; letter-spacing:.04em;
-      padding:2px 6px; border-radius:6px; background:var(--glow); color:var(--accent);
-      margin-left:6px; vertical-align:1px}
+.chip{display:inline-block; min-width:19px; font-size:12px; font-weight:800;
+      text-align:center; padding:1px 5px; border-radius:7px;
+      background:var(--glow); color:var(--accent); margin-left:7px; vertical-align:1px}
 
 /* finish card */
 .fin{text-align:center; display:flex; flex-direction:column; justify-content:center; gap:6px}
@@ -247,7 +247,19 @@ var STOPS = PLAN.stops, KEY = 'fieldplan:' + PLAN.id;
 
 /* ---------- progress ---------- */
 var done = new Set();
-try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch(e){}
+var stored = null;
+try { stored = localStorage.getItem(KEY); } catch(e){}
+if (stored){
+  try { done = new Set(JSON.parse(stored)); } catch(e){}
+} else {
+  // First time this plan is opened: anything already done -- keys you are
+  // carrying -- starts ticked. Only ever seeded once, so unticking one and
+  // coming back later leaves it unticked.
+  STOPS.forEach(function(s){
+    s.acts.forEach(function(a){ if (a.pre) done.add(a.id); });
+  });
+  save();
+}
 function save(){
   try { localStorage.setItem(KEY, JSON.stringify(Array.from(done))); }
   catch(e){ /* private mode: the plan still works, it just will not remember */ }
@@ -303,6 +315,7 @@ function buildLeg(s){
 function buildAct(act){
   var li = el('li', 'act' + (act.note ? ' note' : ''));
   li.dataset.id = act.id;
+  li.dataset.kind = act.k;
   li.appendChild(el('span','box','✓'));
   var body = el('div','body');
   var t = el('div','t');
@@ -310,15 +323,11 @@ function buildAct(act){
   // No "Link to" prefix: the arrow glyph on the left already says link
   t.appendChild(document.createTextNode(act.txt));
   if (act.k === 'link' && act.link !== 'L'){
-    t.appendChild(el('span','chip', act.link === 'D' ? act.fields + ' FIELDS' : 'FIELD'));
+    // Just the count -- the green pill already says these are fields
+    t.appendChild(el('span','chip', String(act.fields)));
   }
   body.appendChild(t);
-  var sub = act.sub || '';
-  if (act.k === 'link'){
-    var aim = metres(act.dist) + ' ' + compass(act.bearing);
-    sub = sub ? aim + ' · ' + sub : aim;
-  }
-  if (sub) body.appendChild(el('div','sub', sub));
+  if (act.sub) body.appendChild(el('div','sub', act.sub));
   li.appendChild(body);
   if (!act.note) li.addEventListener('click', function(){ toggle(act.id); });
   return li;

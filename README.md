@@ -120,9 +120,11 @@ minutes and drops the heat sinks needed from three to one.
 
 Portals you have no keys for need no annotation -- the default is zero.
 
-All three output formats count them, so a stop you can already cover says so
-("keys already in hand") instead of telling you to farm keys that are in your
-pocket, and a partly covered stop asks only for the difference.
+All three output formats count them. The text and spreadsheet plans ask only
+for the difference, and say so outright when a stop is already covered. The
+HTML plan shows the full number every stop needs and simply arrives with it
+ticked off, which keeps every stop reading the same and lets you untick it if
+you turn out to be a key short.
 
 *Note:* `-n`/`--nosave` has no effect in text file mode -- the plan file is
 always written.
@@ -154,8 +156,9 @@ The rest of it:
 
 - **Navigate** hands the portal to Google Maps for turn-by-turn directions, in
   the travel mode you generated the plan with
-- each link shows how far away its target is and roughly which way to face,
-  which helps when you are picking it out of a crowded scanner
+- key rows read "NN required" everywhere, and arrive already ticked when you
+  are carrying them. They stay tickable, so if the count in your portal list
+  was optimistic you can untick one and the stop reopens
 - **All stops** opens the whole run: a map of the route with the fields filling
   in as you complete them, the totals, and every stop with its progress. Tap
   any of them to jump there

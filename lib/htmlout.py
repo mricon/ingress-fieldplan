@@ -38,36 +38,27 @@ TRAVELNAME = {
 
 
 def _key_action(keys):
-    """What to do about keys at this stop. 'hack' is what the clock paid for."""
+    """
+    What to do about keys here: always "NN required", never a special case.
+
+    NN is what this visit needs, whether or not you are carrying it. When
+    the keys are already in hand the row arrives ticked instead of turning
+    into a differently-worded note, so the checklist reads the same at
+    every stop and you can untick it if you spent them on the way.
+    """
     want = keys['want']
-    hack = keys['hack']
-
     if not want:
-        # Every link into this portal happens on a later visit
+        # Every link into this portal happens on a later visit; say so once,
+        # unchecked, rather than showing "0 required"
         return {'k': 'keys', 'note': True,
-                'txt': 'No keys needed yet',
-                'sub': '%s wanted here on a later visit.' % plansteps.plural(keys['total'], 'key')}
+                'txt': '%d required later' % keys['total']}
 
-    if not hack:
-        # Deliberately not quoting the number carried: the run spends that
-        # stock across visits, so the figure from the portal list is stale
-        # by the second visit
-        return {'k': 'keys', 'note': True,
-                'txt': 'Keys already in hand',
-                'sub': ('The one key needed here is already on you.' if want == 1
-                        else 'All %d keys needed here are ones you carry.' % want)}
-
+    act = {'k': 'keys', 'txt': '%d required' % want}
+    if not keys['hack']:
+        act['pre'] = True
     if keys['lastvisit']:
-        sub = 'Last time here, so get them all now.'
-    elif keys['ensure'] < keys['total']:
-        sub = '%d needed here in all; you come back for the other %d.' % (
-            keys['total'], keys['total'] - keys['ensure'])
-    else:
-        sub = 'You pass through again, but these are all the keys it needs.'
-    if hack < want:
-        sub += ' The other %s you already carry.' % plansteps.plural(want - hack, 'key')
-
-    return {'k': 'keys', 'txt': 'Hack for %s' % plansteps.plural(hack, 'key'), 'sub': sub}
+        act['sub'] = 'Last visit.'
+    return act
 
 
 def _actions(stop):
@@ -105,7 +96,7 @@ def _actions(stop):
     if stop['shields']:
         acts.append({'k': 'shields',
                      'txt': 'Shield up',
-                     'sub': 'Last time here. %s to protect.'
+                     'sub': 'Last visit. %s to protect.'
                             % plansteps.plural(stop['shields']['links'], 'link')})
 
     return acts
