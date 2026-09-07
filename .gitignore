@@ -12,4 +12,3 @@ token.json
 *_plan.txt
 test_plots*/
 __pycache__/
-*.txt

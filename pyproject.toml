@@ -1,7 +1,7 @@
 [project]
 name = "ingress-fieldplan"
 version = "0.1.0"
-description = "Add your description here"
+description = "Generate an easy workplan for Ingress fielding excursions"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

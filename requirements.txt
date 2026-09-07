@@ -1,7 +1,11 @@
+# Kept for pip users; pyproject.toml/uv.lock are the source of truth.
 matplotlib
 networkx
 numpy
 google-api-python-client
 oauth2client
-ortools>=8.0,<9.0
+ortools
+protobuf
 googlemaps
+imageio>=2.37.2
+pygifsicle>=1.1.0

@@ -223,8 +223,8 @@ def make_png_steps(workplan, outdir, faction, plotdpi=96):
         gif_file = os.path.join(outdir, 'plan_movie.gif')
         logger.info('Generating GIF animation: %s', gif_file)
         
-        # duration is seconds per frame
-        with imageio.get_writer(gif_file, mode='I', duration=0.5, loop=0) as writer:
+        # duration is milliseconds per frame
+        with imageio.get_writer(gif_file, mode='I', duration=500, loop=0) as writer:
             for frame in frames:
                 # imageio v3 prefers imageio.v3.imread but v2 is imageio.imread
                 # We'll use the generic read for compatibility

@@ -324,7 +324,7 @@ def make_workplan(a, is_subset=False):
         if not assignment:
             logger.debug('Could not solve for these constraints, ignoring plan')
             capture_cache[cachekey] = None
-            return None
+            return None, None
 
         index = routing.Start(0)
         dist_ordered = list()
@@ -338,7 +338,7 @@ def make_workplan(a, is_subset=False):
         logger.debug('Capture cache hit')
         if capture_cache[cachekey] is None:
             logger.debug('Known unsolvable, ignoring')
-            return None
+            return None, None
         dist_ordered = capture_cache[cachekey]
 
     logger.debug('dist_ordered=%s', dist_ordered)
