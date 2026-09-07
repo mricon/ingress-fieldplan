@@ -188,6 +188,50 @@ def check_key_budget_across_visits():
     return fails
 
 
+def check_stop_times():
+    """
+    Per-stop minutes have to account for the whole run, not just the walk.
+
+    The header used to count down the travel legs only, so a 1:16 plan
+    opened claiming "43 min left" -- the capturing, hacking, linking and
+    shielding were missing. get_workplan_stats() now reports a minute count
+    per arrival, and the page sums the ones still to do. If those stop
+    times ever drift from the total, the countdown quietly lies again.
+    """
+    fails = []
+    for fixture in ('waypoints.txt', 'keys.txt'):
+        a, workplan, stats = plan(fixture)
+        stops = plansteps.build_stops(a, workplan)
+        times = stats.get('stoptimes')
+        if not times:
+            fails.append('%s: no per-stop times reported' % fixture)
+            continue
+        if len(times) != len(stops):
+            fails.append('%s: %d stop times for %d stops'
+                         % (fixture, len(times), len(stops)))
+            continue
+        if abs(sum(times) - stats['time']) > 1e-6:
+            fails.append('%s: stop times sum to %.4f, plan time is %.4f'
+                         % (fixture, sum(times), stats['time']))
+        for i, (t, stop) in enumerate(zip(times, stops)):
+            if t < 0:
+                fails.append('%s: stop %d has negative time %.2f' % (fixture, i + 1, t))
+            walk = stop['travel']['time'] if stop['travel'] else 0
+            if t + 1e-9 < walk:
+                fails.append('%s: stop %d takes %.2f but the walk there is %d'
+                             % (fixture, i + 1, t, walk))
+        # The whole run has to be more than the walking, or the countdown
+        # is measuring the wrong thing again
+        if sum(times) <= stats['traveltime']:
+            fails.append('%s: stop times (%.1f) do not exceed travel (%.1f)'
+                         % (fixture, sum(times), stats['traveltime']))
+
+        p = htmlout.build_plan(a, workplan, stats, 'enl', 'walking')
+        if any('t' not in st for st in p['stops']):
+            fails.append('%s: some stops reached the page without a time' % fixture)
+    return fails
+
+
 def check_plan_json():
     fails = []
     a, workplan, stats = plan()
@@ -406,7 +450,8 @@ def check_in_a_browser():
         return None
 
     a, workplan, stats = plan('keys.txt')
-    page = htmlout.render(htmlout.build_plan(a, workplan, stats, 'enl', 'walking'))
+    shown_plan = htmlout.build_plan(a, workplan, stats, 'enl', 'walking')
+    page = htmlout.render(shown_plan)
     tmp = tempfile.mkdtemp(prefix='fieldplan-page-')
     path = os.path.join(tmp, 'plan.html')
     with open(path, 'w', encoding='utf-8') as fh:
@@ -531,6 +576,23 @@ def check_in_a_browser():
             fails.append('the map drew only %d shapes' % sh['drawn'])
         if n and not sh['ok']:
             fails.append('the overview shows no finished stop')
+        # The countdown covers the whole run. It used to sum the travel legs
+        # only, so a plan opened claiming far less time than it takes.
+        head = pg.evaluate("() => document.getElementById('hleft').textContent")
+        m = re.search(r'(?:(\d+):(\d\d)|(\d+) min) left', head)
+        if not m:
+            fails.append('the header shows no time left: %r' % head)
+        else:
+            shown = int(m.group(3)) if m.group(3) else int(m.group(1)) * 60 + int(m.group(2))
+            travel = sum(s['travel']['t'] for s in shown_plan['stops'] if s.get('travel'))
+            total = stats['time']
+            if shown <= travel:
+                fails.append('the header says %d min, no more than the %d min of '
+                             'walking, so it is counting travel only' % (shown, travel))
+            if shown > round(total) + 1:
+                fails.append('the header says %d min, more than the whole %.1f min plan'
+                             % (shown, total))
+
         # A link row is one line: name and field count, no second line. The
         # distance and bearing used to sit under it and cost a line of height
         # on every link, which is most of the plan.
@@ -672,6 +734,7 @@ def main():
         ('stops cover the workplan', check_stops_cover_the_workplan),
         ('keys match the time model', check_keys_match_the_time_model),
         ('key budget across visits', check_key_budget_across_visits),
+        ('stop times', check_stop_times),
         ('plan json', check_plan_json),
         ('page is self-contained', check_page_is_self_contained),
         ('sheet and page agree', check_sheet_and_page_agree),

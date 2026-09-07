@@ -37,6 +37,18 @@ TRAVELNAME = {
 }
 
 
+def _hm(minutes):
+    """
+    h:mm, rounded to the nearest minute.
+
+    stats['nicetime'] truncates seconds, so a 59.5 minute plan reads 0:59
+    there while the page's own countdown rounds it to 1:00. Rounding both
+    from the same number keeps the header and the totals agreeing.
+    """
+    m = int(round(minutes))
+    return '%d:%02d' % (m // 60, m % 60)
+
+
 def _key_action(keys):
     """
     What to do about keys here: always "NN required", never a special case.
@@ -104,6 +116,14 @@ def _actions(stop):
 
 def build_plan(a, workplan, stats, faction, travelmode, title=None):
     stops = plansteps.build_stops(a, workplan, travelmode)
+    # Minutes per stop, walk there plus work done there. Same order and
+    # length as the stops; if that ever stops being true, drop it rather
+    # than mislabel the page with someone else's numbers.
+    stoptimes = stats.get('stoptimes') or []
+    if len(stoptimes) != len(stops):
+        logger.debug('stoptimes has %d entries for %d stops, ignoring',
+                     len(stoptimes), len(stops))
+        stoptimes = []
 
     jstops = []
     for idx, stop in enumerate(stops):
@@ -123,6 +143,8 @@ def build_plan(a, workplan, stats, faction, travelmode, title=None):
             'map': stop['mapurl'],
             'acts': acts,
         }
+        if stoptimes:
+            jstop['t'] = round(float(stoptimes[idx]), 2)
         if stop['travel']:
             jstop['travel'] = {
                 'd': stop['travel']['dist'],
@@ -156,8 +178,8 @@ def build_plan(a, workplan, stats, faction, travelmode, title=None):
             'ap': int(stats['ap']),
             'km': round(float(stats['dist']) / 1000.0, 2),
             'sqkm': round(float(stats['area']) / 1000000.0, 2),
-            'time': stats['nicetime'].rsplit(':', 1)[0],
-            'traveltime': stats['nicetraveltime'].rsplit(':', 1)[0],
+            'time': _hm(stats['time']),
+            'traveltime': _hm(stats['traveltime']),
             'links': int(stats['links']),
             'fields': int(stats['fields']),
             'hs': int(stats['hs']),

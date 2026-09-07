@@ -274,6 +274,11 @@ function metres(m){ return m >= 1000 ? (m/1000).toFixed(1)+' km' : m+' m'; }
 /* The travel model rounds to whole minutes, so short hops come back as 0 */
 function minutes(t, mode){ return t >= 1 ? (t + ' min' + (mode ? ' ' + mode : ''))
                                          : 'under a minute'; }
+function hm(mins){
+  mins = Math.round(mins);
+  if (mins < 60) return mins + ' min';
+  return Math.floor(mins / 60) + ':' + ('0' + (mins % 60)).slice(-2);
+}
 function el(tag, cls, txt){
   var e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -459,12 +464,21 @@ function paint(){
     hof.textContent = 'of ' + STOPS.length;
   }
 
-  // What is left to travel from here on
-  var far = 0, mins = 0;
-  for (var j = at + 1; j < STOPS.length; j++){
-    if (STOPS[j].travel){ far += STOPS[j].travel.d; mins += STOPS[j].travel.t; }
+  // What is left from here on. The time is the whole run -- walking plus
+  // capturing, hacking, linking and shielding -- not just the walking,
+  // which read as far too optimistic on the first card.
+  var far = 0, mins = 0, timed = false;
+  for (var j = at; j < STOPS.length; j++){
+    if (j > at && STOPS[j].travel) far += STOPS[j].travel.d;
+    if (STOPS[j].t == null) continue;
+    timed = true;
+    if (!isDone(STOPS[j])) mins += STOPS[j].t;
   }
-  hleft.textContent = far ? (metres(far) + ' · ' + mins + ' min left') : 'last stop';
+  var bits = [];
+  if (far) bits.push(metres(far));
+  if (timed && mins) bits.push(hm(mins) + ' left');
+  else if (!timed && far) bits.push('to walk');
+  hleft.textContent = bits.length ? bits.join(' · ') : 'last stop';
 
   paintNext();
   if (!sheet.hidden) paintSheet();

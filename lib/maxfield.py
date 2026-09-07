@@ -657,6 +657,12 @@ def get_workplan_stats(workplan):
     prev_p = None
     seen_p = set()
     time_at_portal = 0
+    # Minutes belonging to each arrival: the walk to it plus the work done
+    # there. One entry per stop, in plan order, so a reader can say how much
+    # of the run is left rather than only how much walking is left. Sums to
+    # 'time'; tests/test_htmlout.py holds it to that.
+    stop_times = []
+    travel_in = 0
     for idx, (p, q, f) in enumerate(workplan):
         # Are we at a different location than the previous portal?
         if p != prev_p:
@@ -664,6 +670,7 @@ def get_workplan_stats(workplan):
             totaltime += time_at_portal
             if prev_p is not None:
                 portal_times[prev_p] += time_at_portal
+                stop_times.append(travel_in + time_at_portal)
 
             # We are at a new portal, so add half a minute just because
             # it takes time to get positioned and get to the right
@@ -678,6 +685,7 @@ def get_workplan_stats(workplan):
 
             if prev_p is not None:
                 duration = time_t[prev_p][p]
+                travel_in = duration
                 totaltime += duration
                 traveltime += duration
                 dist = dist_t[prev_p][p]
@@ -750,6 +758,7 @@ def get_workplan_stats(workplan):
     # Add time at the last portal
     totaltime += time_at_portal
     portal_times[p] = time_at_portal
+    stop_times.append(travel_in + time_at_portal)
 
     stats = {
         'time': totaltime,
@@ -757,6 +766,7 @@ def get_workplan_stats(workplan):
         'traveltime': traveltime,
         'nicetraveltime': str(timedelta(minutes=traveltime)),
         'portaltimes': portal_times,
+        'stoptimes': stop_times,
         'hs': hscount,
         'hs_at': hs_at,
         'ap': totalap,

@@ -166,7 +166,8 @@ The rest of it:
   seconds -- the walk between stops, then each link and field as it goes up --
   so you can see the shape of the evening before you set off. Stop it any time;
   it hands the map straight back to showing where you actually are
-- the header counts down the distance and time still to travel
+- the header counts down what is left of the **whole run** -- the walking
+  plus the capturing, hacking, linking and shielding -- not just the walking
 - the cup icon asks the browser to keep the screen awake, so it stops locking
   every thirty seconds while you walk. Not every browser offers this, and the
   button is hidden when yours does not
