@@ -220,15 +220,22 @@ def write_workplan(service, spid, a, workplan, stats, faction, travelmode='walki
 
         keys = stop['keys']
         if keys:
-            if keys['lastvisit']:
-                logger.info('--|H: ensure %d keys', keys['total'])
-                planrows.append(('H', 'ensure %d keys' % keys['total']))
-            elif keys['ensure']:
-                logger.info('--|H: ensure %d keys (%d max)', keys['ensure'], keys['total'])
-                planrows.append(('H', 'ensure %d keys (%d max)' % (keys['ensure'], keys['total'])))
-            else:
+            # 'hack' is what is left once the keys already in hand are taken
+            # off; 'total' stays the raw number the plan wants for this
+            # portal, since that is what the "max" figure has always meant
+            if not keys['want']:
                 logger.info('--|H: %d max keys needed', keys['total'])
                 planrows.append(('H', '%d max keys needed' % keys['total']))
+            elif not keys['hack']:
+                held = plansteps.plural(keys['want'], 'key')
+                logger.info('--|H: %s already in hand', held)
+                planrows.append(('H', '%s already in hand' % held))
+            elif keys['lastvisit']:
+                logger.info('--|H: ensure %d keys', keys['hack'])
+                planrows.append(('H', 'ensure %d keys' % keys['hack']))
+            else:
+                logger.info('--|H: ensure %d keys (%d max)', keys['hack'], keys['total'])
+                planrows.append(('H', 'ensure %d keys (%d max)' % (keys['hack'], keys['total'])))
 
         if stop['shields']:
             planrows.append(('S', 'shields on (%d links)' % stop['shields']['links']))

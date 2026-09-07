@@ -120,6 +120,10 @@ minutes and drops the heat sinks needed from three to one.
 
 Portals you have no keys for need no annotation -- the default is zero.
 
+All three output formats count them, so a stop you can already cover says so
+("keys already in hand") instead of telling you to farm keys that are in your
+pocket, and a partly covered stop asks only for the difference.
+
 *Note:* `-n`/`--nosave` has no effect in text file mode -- the plan file is
 always written.
 
@@ -170,10 +174,9 @@ anywhere, which also means progress does not follow you to another phone, and
 clearing site data clears it. "Clear all progress" at the bottom of **All
 stops** resets it deliberately.
 
-A couple of things it does better than the spreadsheet: it counts keys you
-already hold, so it says "keys already in hand" instead of telling you to farm
-five you have in your pocket, and it lists shields after the links you make
-from that portal rather than before, which is the order you actually play.
+One thing it does differently from the spreadsheet: it lists shields after the
+links you make from that portal rather than before, which is the order you
+actually play.
 
 # Using Google Spreadsheets instead
 

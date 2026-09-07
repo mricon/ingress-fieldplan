@@ -207,13 +207,18 @@ def write_workplan(filename, a, workplan, stats, faction, travelmode='walking'):
 
             keys = stop['keys']
             if keys:
-                if keys['lastvisit']:
-                    f.write(f"  [H] Ensure {keys['total']} keys here\n")
-                elif keys['ensure']:
-                    f.write(f"  [H] Ensure {keys['ensure']} keys here "
-                            f"(will need {keys['total']} total)\n")
-                else:
+                # 'hack' nets off the keys already in hand; 'total' is the
+                # raw number of links into this portal still to be made
+                if not keys['want']:
                     f.write(f"  [H] Need {keys['total']} max keys later\n")
+                elif not keys['hack']:
+                    held = plansteps.plural(keys['want'], 'key')
+                    f.write(f"  [H] Already carrying the {held} needed here\n")
+                elif keys['lastvisit']:
+                    f.write(f"  [H] Ensure {keys['hack']} keys here\n")
+                else:
+                    f.write(f"  [H] Ensure {keys['hack']} keys here "
+                            f"(will need {keys['total']} total)\n")
 
             if stop['shields']:
                 f.write(f"  [S] Shields ON ({stop['shields']['links']} links)\n")

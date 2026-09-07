@@ -129,8 +129,13 @@ def check_keys_match_the_time_model():
             if c['lastvisit'] and c['ensure'] != c['total']:
                 fails.append('%s index %d: last visit wants %d of %d'
                              % (fixture, idx, c['ensure'], c['total']))
-            if c['hack'] > (c['total'] if c['lastvisit'] else c['ensure']):
-                fails.append('%s index %d: hacking for more than is needed' % (fixture, idx))
+            if c['want'] != (c['total'] if c['lastvisit'] else c['ensure']):
+                fails.append('%s index %d: want %d, but the visit needs %d'
+                             % (fixture, idx, c['want'],
+                                c['total'] if c['lastvisit'] else c['ensure']))
+            if c['hack'] > c['want']:
+                fails.append('%s index %d: hacking for %d when %d is wanted'
+                             % (fixture, idx, c['hack'], c['want']))
             # Independently: total is every link still to be made into that portal
             p = workplan[idx][0]
             after = sum(1 for w in workplan[idx:] if w[1] == p)
@@ -142,8 +147,7 @@ def check_keys_match_the_time_model():
         if any(keys_t):
             for p in {w[0] for w in workplan}:
                 idxs = [i for i in counts if workplan[i][0] == p]
-                need = sum(counts[i]['total'] if counts[i]['lastvisit'] else counts[i]['ensure']
-                           for i in idxs)
+                need = sum(counts[i]['want'] for i in idxs)
                 hack = sum(counts[i]['hack'] for i in idxs)
                 if need - hack > keys_t[p]:
                     fails.append('%s portal %s: credited %d keys in hand, only %d held'
@@ -164,8 +168,8 @@ def check_key_budget_across_visits():
     workplan = [(0, None, 0), (1, None, 0), (1, 0, 0),
                 (0, None, 0), (2, None, 0), (2, 0, 0)]
     counts = plansteps._key_counts(workplan, [1, 0, 0])
-    want = {0: {'ensure': 1, 'total': 2, 'lastvisit': False, 'hack': 0},
-            3: {'ensure': 1, 'total': 1, 'lastvisit': True, 'hack': 1}}
+    want = {0: {'ensure': 1, 'total': 2, 'lastvisit': False, 'want': 1, 'hack': 0},
+            3: {'ensure': 1, 'total': 1, 'lastvisit': True, 'want': 1, 'hack': 1}}
     for idx in sorted(want):
         if idx not in counts:
             fails.append('no visit recorded at index %d' % idx)
@@ -276,6 +280,115 @@ def check_sheet_and_page_agree():
     if sheet_links != page_links:
         fails.append('sheet lists %d links, the model lists %d, and they differ'
                      % (len(sheet_links), len(page_links)))
+    return fails
+
+
+def check_writers_net_keys_in_hand():
+    """
+    All three writers must count the keys you already hold.
+
+    The time model has netted them since 5587e4c, but the Sheets and text
+    writers went on printing the raw counts, so a plan could tell you to
+    farm five keys that were in your pocket. Driven on keys.txt, which is
+    the only fixture with keys in hand, and it fails if that fixture ever
+    stops exercising the netting rather than quietly passing.
+    """
+    fails = []
+    from test_gsheets import FakeSheets
+    from lib import gsheets, text_interface
+
+    a, workplan, stats = plan('keys.txt')
+    stops = [s for s in plansteps.build_stops(a, workplan) if s['keys']]
+    covered = [s for s in stops if s['keys']['want'] and not s['keys']['hack']]
+    hacked = [s for s in stops if s['keys']['hack']]
+    if not covered:
+        fails.append('keys.txt no longer has a visit fully covered by keys in hand, '
+                     'so nothing here tests the netting')
+    if not hacked:
+        fails.append('keys.txt no longer has a visit that needs hacking')
+
+    rows = []
+
+    class Rec(FakeSheets):
+        def batchUpdate(self, spreadsheetId=None, body=None):
+            for u in body.get('data', []):
+                rows.extend([list(r) for r in u['values']])
+            return FakeSheets.batchUpdate(self, spreadsheetId=spreadsheetId, body=body)
+
+    gsheets.write_workplan(Rec(['Portals']), 'sid', a, workplan, stats, 'enl')
+    sheet = [r[1] for r in rows if len(r) > 1 and r[0] == 'H']
+
+    tmp = tempfile.mkdtemp(prefix='fieldplan-text-')
+    src = os.path.join(tmp, 'p.txt')
+    open(src, 'w').close()
+    text_interface.write_workplan(src, a, workplan, stats, 'enl')
+    with open(os.path.join(tmp, 'p_plan.txt'), encoding='utf-8') as fh:
+        text = [l.strip()[4:] for l in fh if l.strip().startswith('[H]')]
+
+    fails += _writers_say(a, workplan, stats, stops, sheet, text)
+
+    # keys.txt only ever covers a visit fully or not at all, so on its own it
+    # cannot tell 'hack' from 'want' in the last-visit line. Rather than churn
+    # the recorded golden by editing the fixture, hold one portal's keys just
+    # short of what a visit needs and re-run the writers over the same plan.
+    short_by_one = dict()
+    for s in stops:
+        if s['keys']['want'] > 1 and not s['keys']['in_hand']:
+            short_by_one.setdefault(s['node'], s['keys']['want'] - 1)
+    if not short_by_one:
+        fails.append('no visit in keys.txt needs two or more keys with none in hand, '
+                     'so partial cover is untested')
+    else:
+        was = {n: a.nodes[n]['keys'] for n in short_by_one}
+        try:
+            for n, held in short_by_one.items():
+                a.nodes[n]['keys'] = held
+            short = [s for s in plansteps.build_stops(a, workplan) if s['keys']]
+            # Both branches of the key line have to see a partly covered visit,
+            # or swapping 'hack' for the raw count goes unnoticed in one of them
+            for last in (True, False):
+                if not [s for s in short if s['keys']['lastvisit'] is last
+                        and 0 < s['keys']['hack'] < s['keys']['want']]:
+                    fails.append('no %s visit is partly covered by keys in hand'
+                                 % ('last' if last else 'return'))
+            rows[:] = []
+            gsheets.write_workplan(Rec(['Portals']), 'sid', a, workplan, stats, 'enl')
+            psheet = [r[1] for r in rows if len(r) > 1 and r[0] == 'H']
+            text_interface.write_workplan(src, a, workplan, stats, 'enl')
+            with open(os.path.join(tmp, 'p_plan.txt'), encoding='utf-8') as fh:
+                ptext = [l.strip()[4:] for l in fh if l.strip().startswith('[H]')]
+            fails += _writers_say(a, workplan, stats, short, psheet, ptext)
+        finally:
+            for n, held in was.items():
+                a.nodes[n]['keys'] = held
+    return fails
+
+
+def _writers_say(a, workplan, stats, stops, sheet, text):
+    fails = []
+    for name, lines in (('sheet', sheet), ('text', text)):
+        if len(lines) != len(stops):
+            fails.append('%s wrote %d key lines for %d stops that need keys'
+                         % (name, len(lines), len(stops)))
+            continue
+        for line, stop in zip(lines, stops):
+            k = stop['keys']
+            asked = re.search(r'(?:ensure|Ensure) (\d+)', line)
+            if not k['want']:
+                continue  # nothing due yet; both writers report the later max
+            if not k['hack']:
+                if asked:
+                    fails.append('%s at %s: %r asks for keys already in hand'
+                                 % (name, stop['name'], line))
+                elif 'in hand' not in line and 'carrying' not in line:
+                    fails.append('%s at %s: %r does not say the keys are held'
+                                 % (name, stop['name'], line))
+            elif not asked:
+                fails.append('%s at %s: %r names no number, %d must be hacked'
+                             % (name, stop['name'], line, k['hack']))
+            elif int(asked.group(1)) != k['hack']:
+                fails.append('%s at %s: %r asks for %s, %d must be hacked'
+                             % (name, stop['name'], line, asked.group(1), k['hack']))
     return fails
 
 
@@ -442,6 +555,7 @@ def main():
         ('plan json', check_plan_json),
         ('page is self-contained', check_page_is_self_contained),
         ('sheet and page agree', check_sheet_and_page_agree),
+        ('writers net keys in hand', check_writers_net_keys_in_hand),
         ('page in a browser', check_in_a_browser),
     )
     failed = False

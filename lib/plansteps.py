@@ -29,6 +29,10 @@ TRAVELMOJI = {
 SAME_SPOT_M = 40
 
 
+def plural(n, word):
+    return '%d %s' % (n, word if n == 1 else word + 's')
+
+
 def maps_url(pll, travelmode='walking'):
     return ('https://www.google.com/maps/dir/?api=1&destination=%s&travelmode=%s'
             % (pll, travelmode))
@@ -74,6 +78,9 @@ def _key_counts(workplan, keys_t=None):
               last visit, and zero when every link into the portal happens
               on a later visit.
     lastvisit:whether we ever come back.
+    want:     what this visit needs, which is total on the last visit and
+              ensure otherwise. Every writer needs the same distinction, so
+              it is made once here rather than three times.
     hack:     how many you have to actually go and get, once the keys you
               already hold are taken off. Keys in hand are a budget for the
               whole run rather than per visit, so they are spent against
@@ -100,8 +107,9 @@ def _key_counts(workplan, keys_t=None):
         if idx == 0 or workplan[idx - 1][0] != p:
             # first action of a visit
             ensure, total, last = pending[p]
+            want = total if last else ensure
             counts[idx] = {'ensure': ensure, 'total': total, 'lastvisit': last,
-                           'hack': total if last else ensure}
+                           'want': want, 'hack': want}
             at_next_visit[p] = links_to.get(p, 0)
         if q is not None:
             links_to[q] = links_to.get(q, 0) + 1

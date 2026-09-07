@@ -37,20 +37,16 @@ TRAVELNAME = {
 }
 
 
-def _plural(n, word):
-    return '%d %s' % (n, word if n == 1 else word + 's')
-
-
 def _key_action(keys):
     """What to do about keys at this stop. 'hack' is what the clock paid for."""
-    want = keys['total'] if keys['lastvisit'] else keys['ensure']
+    want = keys['want']
     hack = keys['hack']
 
     if not want:
         # Every link into this portal happens on a later visit
         return {'k': 'keys', 'note': True,
                 'txt': 'No keys needed yet',
-                'sub': '%s wanted here on a later visit.' % _plural(keys['total'], 'key')}
+                'sub': '%s wanted here on a later visit.' % plansteps.plural(keys['total'], 'key')}
 
     if not hack:
         # Deliberately not quoting the number carried: the run spends that
@@ -69,9 +65,9 @@ def _key_action(keys):
     else:
         sub = 'You pass through again, but these are all the keys it needs.'
     if hack < want:
-        sub += ' The other %s you already carry.' % _plural(want - hack, 'key')
+        sub += ' The other %s you already carry.' % plansteps.plural(want - hack, 'key')
 
-    return {'k': 'keys', 'txt': 'Hack for %s' % _plural(hack, 'key'), 'sub': sub}
+    return {'k': 'keys', 'txt': 'Hack for %s' % plansteps.plural(hack, 'key'), 'sub': sub}
 
 
 def _actions(stop):
@@ -110,7 +106,7 @@ def _actions(stop):
         acts.append({'k': 'shields',
                      'txt': 'Shield up',
                      'sub': 'Last time here. %s to protect.'
-                            % _plural(stop['shields']['links'], 'link')})
+                            % plansteps.plural(stop['shields']['links'], 'link')})
 
     return acts
 
