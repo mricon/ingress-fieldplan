@@ -46,6 +46,8 @@ def reset_state():
     maxfield.active_graph = None
     maxfield.waypoint_graph = None
     maxfield.minap = None
+    # Time-limited local search is not reproducible; golden runs use greedy routes
+    maxfield.capture_search_ms = 0
 
 
 def run_fixture(filename, iterations):

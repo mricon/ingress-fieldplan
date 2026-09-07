@@ -52,6 +52,8 @@ coolthreshold = 5
 maxmu = False
 travelmode = 'walking'
 maxtime = None
+# ms of guided local search to improve each capture route; 0 = greedy only
+capture_search_ms = 200
 
 capture_cache = dict()
 dist_matrix = list()
@@ -334,6 +336,13 @@ def make_workplan(a, is_subset=False):
         search_parameters.first_solution_strategy = (
             routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC
         )
+        if capture_search_ms > 0:
+            # Improve on the greedy first solution. Routes are cached per
+            # (start, first link) so this runs at most once per key.
+            search_parameters.local_search_metaheuristic = (
+                routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+            )
+            search_parameters.time_limit.FromMilliseconds(capture_search_ms)
         logger.debug('Starting solver')
         assignment = routing.SolveWithParameters(search_parameters)
         logger.debug('Ended solver')

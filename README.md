@@ -202,6 +202,13 @@ possible plan on your first run, and to only find terrible plans even after
 
 You can hit Ctrl-C at any point to stop early and use the best plan found so far.
 
+The route used to capture all portals before linking starts is solved as a
+travelling-salesman problem. By default the solver spends 200 ms of local
+search improving each route on top of the quick greedy one, which typically
+shortens the capture walk by a few percent. Routes are cached, so this costs a
+few seconds per run in total. Pass `--capture-search-ms 0` to skip it, or a
+larger value to search harder on big portal sets.
+
 ## Getting lots of keys from portals
 
 Getting lots of keys used to be difficult, but really isn't any longer. If

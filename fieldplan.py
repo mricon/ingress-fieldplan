@@ -20,7 +20,8 @@ _V_ = '3.3.0'
 # a proper fork ability
 _maxfield_names = {'combined_graph', 'portal_graph', 'waypoint_graph', 'active_graph', 'capture_cache', 'dist_matrix',
                    'time_matrix', 'direct_dist_matrix', 'smallest_triangle', 'largest_triangle', 'seen_subsets',
-                   'maxmu', 'cooling', 'minap', 'keysperhack', 'travelmode', 'maxtime', 'coolthreshold'}
+                   'maxmu', 'cooling', 'minap', 'keysperhack', 'travelmode', 'maxtime', 'coolthreshold',
+                   'capture_search_ms'}
 
 # Are we going to use spawn or fork?
 mp_method = mp.get_start_method(allow_none=False)
@@ -206,6 +207,9 @@ def main():
                         help='How many keys per hack action')
     parser.add_argument('--cool-if-longer-than', dest='coolthreshold', type=int, default=5,
                         help='Apply cooling if getting keys would take longer than this many minutes')
+    parser.add_argument('--capture-search-ms', dest='capture_search_ms', type=int, default=200,
+                        help='Milliseconds of local search to spend improving each capture route '
+                        '(0 to keep the plain greedy route)')
     parser.add_argument('-j', '--jsonmap', default=None,
                         help='Save the resulting map as IITC DrawTools json')
     # Obsolete options
@@ -224,6 +228,9 @@ def main():
 
     if args.iterations < 0:
         parser.error('Number of extra samples should be positive')
+
+    if args.capture_search_ms < 0:
+        parser.error('--capture-search-ms must be 0 or greater')
 
     if args.plotdpi < 1:
         parser.error('%s is not a valid screen dpi' % args.plotdpi)
@@ -275,6 +282,7 @@ def main():
     maxfield.coolthreshold = args.coolthreshold
     maxfield.travelmode = args.travelmode
     maxfield.maxtime = args.maxtime
+    maxfield.capture_search_ms = args.capture_search_ms
 
     if len(portals) < 3:
         logger.critical('Must have more than 2 portals!')
