@@ -522,7 +522,70 @@ def check_in_a_browser():
             fails.append('the map drew only %d shapes' % sh['drawn'])
         if n and not sh['ok']:
             fails.append('the overview shows no finished stop')
+        # The route preview: it must run, build the plan up as it goes, put the
+        # live map back when it ends, and not keep going behind a closed sheet
+        solid = ("() => [...document.querySelectorAll('#map line')]"
+                 ".filter(l => !l.getAttribute('stroke-dasharray')).length")
+        live = pg.evaluate("() => document.getElementById('map').childElementCount")
+        pg.evaluate("() => document.getElementById('playbtn').click()")
+        pg.wait_for_timeout(1200)
+        if not pg.evaluate("() => document.getElementById('playbtn').classList.contains('on')"):
+            fails.append('the preview did not start')
+        early = pg.evaluate(solid)
+        cap = pg.evaluate("() => document.getElementById('mapcap').innerText")
+        if not cap:
+            fails.append('the preview names no stop while it runs')
+
+        # Sample the walker while it runs. Links going up and the caption
+        # advancing both happen even if the marker never moves between stops,
+        # so this checks the thing they miss: it has to be seen part way along
+        # a leg, not only sitting on portals.
+        walk = pg.evaluate('''() => new Promise(resolve => {
+            const dots = [...document.querySelectorAll('#map circle')]
+                .filter(c => +c.getAttribute('r') < 4)
+                .map(c => [+c.getAttribute('cx'), +c.getAttribute('cy')]);
+            const seen = [];
+            let n = 0;
+            const tick = setInterval(() => {
+                const m = document.querySelector('#map circle[r="5"]');
+                if (m) seen.push([+m.getAttribute('cx'), +m.getAttribute('cy')]);
+                if (++n > 30) { clearInterval(tick); resolve({dots: dots, seen: seen}); }
+            }, 100);
+        })''')
+        if not walk['seen']:
+            fails.append('the preview draws no walker on the map')
+        elif not walk['dots']:
+            fails.append('the map drew no portals to measure the walker against')
+        else:
+            def gap(pt):
+                return min(((pt[0] - d[0]) ** 2 + (pt[1] - d[1]) ** 2) ** 0.5
+                           for d in walk['dots'])
+            if max(gap(pt) for pt in walk['seen']) < 3:
+                fails.append('the walker was never seen between stops in %d samples, '
+                             'so the legs are jumped rather than walked' % len(walk['seen']))
+
+        if pg.evaluate(solid) <= early:
+            fails.append('the preview drew %d links after 1.2s and no more by 4.2s' % early)
+        if pg.evaluate("() => document.getElementById('mapcap').innerText") == cap:
+            fails.append('the preview caption never moved on from %r' % cap)
+
+        for _ in range(30):          # it aims for about nine seconds
+            pg.wait_for_timeout(500)
+            if not pg.evaluate("() => document.getElementById('playbtn').classList.contains('on')"):
+                break
+        else:
+            fails.append('the preview never finished')
+        if pg.evaluate("() => document.getElementById('map').childElementCount") != live:
+            fails.append('the map did not go back to showing real progress')
+        if pg.evaluate("() => document.getElementById('mapcap').innerText"):
+            fails.append('the preview caption outlived the preview')
+
+        pg.evaluate("() => document.getElementById('playbtn').click()")
+        pg.wait_for_timeout(400)
         pg.evaluate("() => document.getElementById('shclose').click()")
+        pg.wait_for_timeout(300)
+        if pg.evaluate("() => document.getElementById('playbtn').classList.contains('on')"):
+            fails.append('closing the overview left the preview running')
 
         # Progress survives being closed and reopened
         pg.reload()

@@ -167,8 +167,15 @@ footer{flex:0 0 auto; padding:0 12px 10px; background:var(--bg)}
 .sh-top{display:flex; align-items:center; gap:10px; padding:12px 14px 8px}
 .sh-top h2{margin:0; font-size:19px; flex:1}
 .sh-body{flex:1; overflow-y:auto; padding:0 14px 20px}
-.map{width:100%; height:190px; background:var(--card); border-radius:14px; margin-bottom:12px;
+.map{width:100%; height:190px; background:var(--card); border-radius:14px;
      box-shadow:var(--shadow); display:block}
+.mapbar{display:flex; align-items:center; gap:10px; margin:8px 0 14px}
+.play{flex:0 0 auto; padding:9px 14px; border-radius:11px; background:var(--card);
+      box-shadow:var(--shadow); font-size:13.5px; font-weight:650; min-height:40px}
+.play.on{background:var(--accent); color:#06130a}
+.cap{font-size:12.5px; color:var(--dim); overflow:hidden;
+     text-overflow:ellipsis; white-space:nowrap}
+.cap b{color:var(--ink); font-weight:650}
 .tot{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px}
 .tot div{background:var(--card); border-radius:11px; padding:8px 6px; text-align:center;
          box-shadow:var(--shadow)}
@@ -220,6 +227,10 @@ footer{flex:0 0 auto; padding:0 12px 10px; background:var(--bg)}
   </div>
   <div class="sh-body">
     <svg class="map" id="map" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="mapbar">
+      <button class="play" id="playbtn">&#9654;&ensp;Preview the run</button>
+      <span class="cap" id="mapcap"></span>
+    </div>
     <div class="tot" id="tot"></div>
     <ul class="olist" id="olist"></ul>
     <button class="reset" id="reset">Clear all progress</button>
@@ -296,8 +307,8 @@ function buildAct(act){
   var body = el('div','body');
   var t = el('div','t');
   t.appendChild(el('span','glyph', GLYPH[act.k] || '•'));
-  t.appendChild(document.createTextNode(
-    act.k === 'link' ? 'Link → ' + act.txt : act.txt));
+  // No "Link to" prefix: the arrow glyph on the left already says link
+  t.appendChild(document.createTextNode(act.txt));
   if (act.k === 'link' && act.link !== 'L'){
     t.appendChild(el('span','chip', act.link === 'D' ? act.fields + ' FIELDS' : 'FIELD'));
   }
@@ -512,7 +523,7 @@ function paintSheet(){
 }
 
 function openSheet(){ sheet.hidden = false; paintSheet(); }
-function closeSheet(){ sheet.hidden = true; }
+function closeSheet(){ stopPreview(); sheet.hidden = true; }
 document.getElementById('list').addEventListener('click', openSheet);
 document.getElementById('shclose').addEventListener('click', closeSheet);
 document.getElementById('reset').addEventListener('click', function(){
@@ -522,6 +533,11 @@ document.getElementById('reset').addEventListener('click', function(){
 
 /* ---------- the map ---------- */
 var SVGNS = 'http://www.w3.org/2000/svg';
+/* While the preview runs this holds the frame being drawn: which links are
+   up yet, which stop we have reached, and how far along the leg out of it
+   we are. Null the rest of the time, when the map shows your real progress. */
+var anim = null;
+
 function drawMap(){
   var svg = document.getElementById('map');
   var P = PLAN.portals;
@@ -548,28 +564,39 @@ function drawMap(){
   var accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
   var dimc = getComputedStyle(document.documentElement).getPropertyValue('--line').trim();
 
+  var shown = anim ? anim.done : done;
+  var here = anim ? anim.at : at;
+
   // the route you walk, under everything else: whole thing faint, walked part lit
-  function route(from, to, stroke, width, op){
+  function route(from, to, stroke, width, op, tail){
     var pts = [];
     for (var k = from; k <= to && k < STOPS.length; k++) pts.push(X(STOPS[k].node) + ',' + Y(STOPS[k].node));
+    if (tail) pts.push(tail[0] + ',' + tail[1]);
     if (pts.length < 2) return;
     add('polyline', {points: pts.join(' '), fill:'none', stroke: stroke,
                      'stroke-width': width, 'stroke-opacity': op,
                      'stroke-linejoin':'round', 'stroke-linecap':'round'});
   }
+  // Where the walker is: at a stop, or partway along the leg out of it
+  var spot = [X(STOPS[Math.min(here, STOPS.length - 1)].node),
+              Y(STOPS[Math.min(here, STOPS.length - 1)].node)];
+  if (anim && anim.t > 0 && here + 1 < STOPS.length){
+    var nx = X(STOPS[here + 1].node), ny = Y(STOPS[here + 1].node);
+    spot = [spot[0] + (nx - spot[0]) * anim.t, spot[1] + (ny - spot[1]) * anim.t];
+  }
   route(0, STOPS.length - 1, dimc, 5, 1);
-  route(0, at, accent, 5, .55);
+  route(0, here, accent, 5, .55, anim && anim.t > 0 ? spot : null);
 
   // fields next so links and dots sit on top
   PLAN.links.forEach(function(l){
-    if (!done.has(l.id)) return;
+    if (!shown.has(l.id)) return;
     l.tri.forEach(function(t){
       add('polygon', {points: t.map(function(v){ return X(v) + ',' + Y(v); }).join(' '),
                       fill: accent, 'fill-opacity': .16, stroke: 'none'});
     });
   });
   PLAN.links.forEach(function(l){
-    var got = done.has(l.id);
+    var got = shown.has(l.id);
     add('line', {x1:X(l.a), y1:Y(l.a), x2:X(l.b), y2:Y(l.b),
                  stroke: got ? accent : dimc, 'stroke-width': got ? 1.6 : 1,
                  'stroke-dasharray': got ? '' : '3 3'});
@@ -578,12 +605,101 @@ function drawMap(){
     add('circle', {cx:X(i), cy:Y(i), r:p.w ? 2.6 : 3.2,
                    fill: p.w ? dimc : accent, 'fill-opacity': p.w ? 1 : .85});
   });
-  if (at < STOPS.length){
-    var here = STOPS[at].node;
-    add('circle', {cx:X(here), cy:Y(here), r:8, fill:'none',
+  if (anim){
+    add('circle', {cx:spot[0], cy:spot[1], r:5, fill:accent});
+    add('circle', {cx:spot[0], cy:spot[1], r:9, fill:'none',
+                   stroke:accent, 'stroke-width':2, 'stroke-opacity':.5});
+  } else if (at < STOPS.length){
+    add('circle', {cx:spot[0], cy:spot[1], r:8, fill:'none',
                    stroke:accent, 'stroke-width':2});
   }
 }
+
+/* ---------- previewing the run ---------- */
+var playbtn = document.getElementById('playbtn'), mapcap = document.getElementById('mapcap');
+var raf = null;
+
+function previewSteps(){
+  // One step per leg walked and per link made, in the order you play them
+  var steps = [];
+  STOPS.forEach(function(s, i){
+    if (i > 0) steps.push({kind:'move', to:i});
+    s.acts.forEach(function(a){
+      if (a.k === 'link') steps.push({kind:'link', to:i, id:a.id});
+    });
+  });
+  return steps;
+}
+
+function caption(text, sub){
+  mapcap.textContent = '';
+  if (!text) return;
+  mapcap.appendChild(el('b', null, text));
+  if (sub) mapcap.appendChild(document.createTextNode(' · ' + sub));
+}
+
+function stopPreview(){
+  if (raf) cancelAnimationFrame(raf);
+  raf = null; anim = null;
+  playbtn.classList.remove('on');
+  playbtn.innerHTML = '&#9654;&ensp;Preview the run';
+  caption('');
+  if (!sheet.hidden) drawMap();
+}
+
+function startPreview(){
+  var steps = previewSteps();
+  if (!steps.length) return;
+  playbtn.classList.add('on');
+  playbtn.innerHTML = '&#9632;&ensp;Stop';
+
+  // Whole thing in about nine seconds however long the plan is, but never
+  // so fast that a step cannot be seen
+  var base = Math.max(70, Math.min(420, 9000 / steps.length));
+  var seen = new Set();
+  anim = {done: seen, at: 0, t: 0};
+  var k = 0, began = null, painted = 0;
+
+  function frame(ts){
+    if (!anim) return;
+    if (began === null) began = ts;
+    var step = steps[k];
+    var span = step.kind === 'move' ? base : base * 0.55;
+    var p = Math.min(1, (ts - began) / span);
+
+    if (step.kind === 'move'){
+      anim.at = step.to - 1; anim.t = p;
+    } else {
+      anim.at = step.to; anim.t = 0;
+      if (p >= 0.4) seen.add(step.id);
+    }
+
+    // Rebuilding the whole map every frame is wasteful; 30 fps is plenty
+    if (ts - painted > 33){ drawMap(); painted = ts; }
+
+    if (p >= 1){
+      if (step.kind === 'move'){ anim.at = step.to; anim.t = 0; }
+      var s = STOPS[Math.min(anim.at, STOPS.length - 1)];
+      caption(s.name, 'stop ' + s.num + ' of ' + STOPS.length);
+      k++; began = ts;
+      if (k >= steps.length){
+        drawMap();
+        caption('Done', PLAN.stats.ap.toLocaleString() + ' AP, ' + PLAN.stats.km + ' km');
+        // Leave the finished map up for a moment before handing it back
+        raf = null;
+        setTimeout(function(){ if (anim) stopPreview(); }, 1400);
+        return;
+      }
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  caption(STOPS[0].name, 'stop 1 of ' + STOPS.length);
+  raf = requestAnimationFrame(frame);
+}
+
+playbtn.addEventListener('click', function(){
+  if (anim) stopPreview(); else startPreview();
+});
 
 /* ---------- screen wake lock ---------- */
 var awake = document.getElementById('awake'), lock = null, want = false;

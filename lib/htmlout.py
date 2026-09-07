@@ -89,7 +89,7 @@ def _actions(stop):
         return acts
 
     if stop['first_visit']:
-        acts.append({'k': 'capture', 'txt': 'Capture and deploy',
+        acts.append({'k': 'capture', 'txt': 'Capture',
                      'sub': 'First time at this portal.'})
 
     if stop['keys']:

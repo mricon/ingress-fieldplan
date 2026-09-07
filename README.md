@@ -159,6 +159,10 @@ The rest of it:
 - **All stops** opens the whole run: a map of the route with the fields filling
   in as you complete them, the totals, and every stop with its progress. Tap
   any of them to jump there
+- **Preview the run**, on that map, animates the whole plan in about nine
+  seconds -- the walk between stops, then each link and field as it goes up --
+  so you can see the shape of the evening before you set off. Stop it any time;
+  it hands the map straight back to showing where you actually are
 - the header counts down the distance and time still to travel
 - the cup icon asks the browser to keep the screen awake, so it stops locking
   every thirty seconds while you walk. Not every browser offers this, and the
