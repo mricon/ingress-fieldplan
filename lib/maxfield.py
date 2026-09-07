@@ -28,8 +28,10 @@ np.seterr(divide='ignore', invalid='ignore')
 TRIES_PER_TRI = 10
 
 # Capture bonus, eight resonators, the bonus for the eighth, and two mods.
-# Niantic raised the capture bonus from 500 to 675 (Ingress wiki, "Access
-# Points", checked 2026-09-07); the link and field values are unchanged.
+# Niantic raised the capture bonus from 500 to 675; the link and field values
+# are unchanged. Taken from the Ingress wiki's "Access Points" page and then
+# confirmed in the scanner on 2026-09-07, so this is a measured number rather
+# than a cited one.
 CAPTUREAP = 675+(125*8)+250+(125*2)
 LINKAP = 313
 FIELDAP = 1250
